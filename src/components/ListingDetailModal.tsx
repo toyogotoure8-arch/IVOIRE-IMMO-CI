@@ -3,6 +3,9 @@ import { Listing } from '../types';
 import { formatFCFA, getWhatsAppLink, formatIvorianPhone, calculateBookingCost } from '../utils/calculations';
 import { useApp } from '../context/AppContext';
 import { RentalFeesCalculator } from './RentalFeesCalculator';
+import { ShareButton } from './ShareButton';
+import { GoogleDistanceCalculator } from './GoogleDistanceCalculator';
+import { COORDONNEES_LOCALITES } from '../constants/ciData';
 import {
   X,
   Heart,
@@ -24,14 +27,21 @@ import {
   ChevronLeft,
   ChevronRight,
   Sparkles,
+  ShieldAlert,
+  AlertTriangle,
+  FileCheck,
+  Receipt,
+  CreditCard,
+  FileDown,
 } from 'lucide-react';
 
 interface Props {
   listing: Listing;
   onClose: () => void;
+  onOpenOfferModal?: (listing?: Listing) => void;
 }
 
-export const ListingDetailModal: React.FC<Props> = ({ listing, onClose }) => {
+export const ListingDetailModal: React.FC<Props> = ({ listing, onClose, onOpenOfferModal }) => {
   const {
     favorites,
     toggleFavorite,
@@ -57,7 +67,8 @@ export const ListingDetailModal: React.FC<Props> = ({ listing, onClose }) => {
 
   // Report modal state
   const [showReportDialog, setShowReportDialog] = useState(false);
-  const [reportReason, setReportReason] = useState('');
+  const [reportReason, setReportReason] = useState<string>('arnaque');
+  const [reportDescription, setReportDescription] = useState<string>('');
 
   const bookingCost = calculateBookingCost(listing.prix, checkIn, checkOut);
 
@@ -94,6 +105,11 @@ export const ListingDetailModal: React.FC<Props> = ({ listing, onClose }) => {
       navigator.clipboard.writeText(window.location.href);
       showToast('Lien de l\'annonce copié dans le presse-papiers !', 'info');
     }
+  };
+
+  const handleDownloadPDF = () => {
+    window.print();
+    showToast('Fiche informative prête : sélectionnez "Enregistrer au format PDF" dans la boîte de dialogue d\'impression.', 'success');
   };
 
   const handleBookingSubmit = async (e: React.FormEvent) => {
@@ -136,13 +152,14 @@ export const ListingDetailModal: React.FC<Props> = ({ listing, onClose }) => {
 
   const handleReportSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!reportReason.trim()) {
+    if (!reportReason) {
       showToast('Veuillez préciser le motif du signalement', 'error');
       return;
     }
-    await submitReport(listing.id, listing.titre, reportReason);
+    await submitReport(listing.id, listing.titre, listing.ownerId, reportReason, reportDescription);
     setShowReportDialog(false);
-    setReportReason('');
+    setReportReason('arnaque');
+    setReportDescription('');
   };
 
   const equipementIcons: Record<string, { label: string; icon: any }> = {
@@ -174,14 +191,7 @@ export const ListingDetailModal: React.FC<Props> = ({ listing, onClose }) => {
           </div>
 
           <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={handleShare}
-              aria-label="Partager l'annonce"
-              className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-300 transition-colors"
-            >
-              <Share2 className="w-5 h-5" />
-            </button>
+            <ShareButton listing={listing} variant="icon" />
             <button
               type="button"
               onClick={() => toggleFavorite(listing.id)}
@@ -360,6 +370,15 @@ export const ListingDetailModal: React.FC<Props> = ({ listing, onClose }) => {
             <RentalFeesCalculator initialRent={listing.prix} />
           )}
 
+          {/* Google Maps Distance & Estimated Travel Time Calculator */}
+          <GoogleDistanceCalculator
+            destination={listing.position || COORDONNEES_LOCALITES[listing.commune] || { lat: 5.34, lng: -3.99 }}
+            destinationLabel={listing.titre}
+            commune={listing.commune}
+            quartier={listing.quartier}
+          />
+
+
           {/* Reservation Request Box (For Meublé & Hôtels) */}
           {isStay && (
             <div className="bg-[#F2F6F0] dark:bg-[#132219] rounded-2xl p-5 border border-[#0F6B3F]/20">
@@ -442,16 +461,70 @@ export const ListingDetailModal: React.FC<Props> = ({ listing, onClose }) => {
             </div>
           )}
 
-          {/* Action Report */}
-          <div className="pt-2 flex justify-end">
-            <button
-              type="button"
-              onClick={() => setShowReportDialog(true)}
-              className="text-xs text-gray-500 hover:text-red-500 dark:text-gray-400 flex items-center gap-1.5 transition-colors"
-            >
-              <Flag className="w-3.5 h-3.5" />
-              <span>Signaler l'annonce</span>
-            </button>
+          {/* Conseils Anti-Arnaque Box */}
+          <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 rounded-2xl p-4 sm:p-5 space-y-3 shadow-sm">
+            <div className="flex items-center gap-2 text-amber-800 dark:text-amber-300 font-extrabold text-sm sm:text-base">
+              <ShieldAlert className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0" />
+              <span>Conseils anti-arnaque</span>
+            </div>
+            <div className="space-y-2 text-xs text-amber-900 dark:text-amber-200 font-medium leading-relaxed">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                <span>
+                  <strong className="font-bold">Ne jamais payer avant la visite :</strong> Ne transférez aucun acompte ou frais de dossier avant d'avoir visité physiquement le bien avec le propriétaire.
+                </span>
+              </div>
+              <div className="flex items-start gap-2">
+                <FileCheck className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                <span>
+                  <strong className="font-bold">Vérifier le titre foncier ou l'ACD pour un achat :</strong> Exigez les documents officiels (ACD / Titre Foncier) auprès d'un notaire certifié avant tout versement.
+                </span>
+              </div>
+              <div className="flex items-start gap-2">
+                <Receipt className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                <span>
+                  <strong className="font-bold">Demander un reçu pour tout paiement :</strong> Exigez systématiquement une quittance officielle ou un reçu écrit, signé et daté pour tout loyer ou caution.
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* CinetPay Boost & Share section */}
+          <div className="pt-2 border-t border-gray-100 dark:border-gray-800 space-y-3">
+            {onOpenOfferModal && (
+              <button
+                type="button"
+                onClick={() => onOpenOfferModal(listing)}
+                className="w-full py-2.5 px-4 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-extrabold text-xs rounded-xl shadow-sm flex items-center justify-center gap-2 transition-all active:scale-98"
+              >
+                <Sparkles className="w-4 h-4 text-white" />
+                <span>Mettre en avant cette annonce ou s'abonner (Mobile Money CinetPay)</span>
+              </button>
+            )}
+
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <ShareButton listing={listing} variant="compact" />
+                <button
+                  type="button"
+                  onClick={handleDownloadPDF}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-emerald-50 dark:bg-emerald-950/40 text-[#0F6B3F] dark:text-[#34D399] border border-emerald-600/30 rounded-xl text-xs font-bold shadow-2xs hover:bg-emerald-100 transition-all"
+                  title="Sauvegarder les informations essentielles au format PDF"
+                >
+                  <FileDown className="w-4 h-4" />
+                  <span>Télécharger en PDF</span>
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowReportDialog(true)}
+                className="text-xs text-gray-500 hover:text-red-500 dark:text-gray-400 flex items-center gap-1.5 transition-colors font-medium"
+              >
+                <Flag className="w-3.5 h-3.5" />
+                <span>Signaler cette annonce</span>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -480,8 +553,8 @@ export const ListingDetailModal: React.FC<Props> = ({ listing, onClose }) => {
       {/* Report Modal */}
       {showReportDialog && (
         <div className="fixed inset-0 z-60 bg-black/70 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-[#16261c] max-w-md w-full rounded-2xl p-5 shadow-2xl border border-gray-200 dark:border-gray-800">
-            <div className="flex justify-between items-center mb-3">
+          <div className="bg-white dark:bg-[#16261c] max-w-md w-full rounded-2xl p-5 shadow-2xl border border-gray-200 dark:border-gray-800 space-y-4">
+            <div className="flex justify-between items-center">
               <h4 className="font-bold text-base text-gray-900 dark:text-white flex items-center gap-2 text-red-600">
                 <Flag className="w-4 h-4" />
                 Signaler cette annonce
@@ -489,34 +562,59 @@ export const ListingDetailModal: React.FC<Props> = ({ listing, onClose }) => {
               <button
                 type="button"
                 onClick={() => setShowReportDialog(false)}
-                className="p-1 text-gray-400 hover:text-gray-600"
+                className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <p className="text-xs text-gray-600 dark:text-gray-300 mb-3">
-              Indiquez la raison du signalement (annonce frauduleuse, bien déjà loué, prix erroné, fausses photos...).
+
+            <p className="text-xs text-gray-600 dark:text-gray-300">
+              Aidez-nous à préserver la sécurité sur IvoireImmo en signalant tout contenu suspect.
             </p>
+
             <form onSubmit={handleReportSubmit} className="space-y-3">
-              <textarea
-                value={reportReason}
-                onChange={(e) => setReportReason(e.target.value)}
-                placeholder="Décrivez le problème constaté..."
-                rows={3}
-                required
-                className="w-full text-sm bg-gray-50 dark:bg-[#1a2d22] border border-gray-300 dark:border-gray-700 rounded-xl p-3 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#0F6B3F]"
-              />
-              <div className="flex justify-end gap-2">
+              <div>
+                <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1.5">
+                  Motif du signalement *
+                </label>
+                <select
+                  value={reportReason}
+                  onChange={(e) => setReportReason(e.target.value)}
+                  required
+                  className="w-full text-sm bg-gray-50 dark:bg-[#1a2d22] border border-gray-300 dark:border-gray-700 rounded-xl px-3 py-2.5 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#0F6B3F]"
+                >
+                  <option value="arnaque">arnaque (Annonce frauduleuse / tentative d'escroquerie)</option>
+                  <option value="bien déjà loué">bien déjà loué (Le bien est déjà loué ou vendu)</option>
+                  <option value="prix faux">prix faux (Le prix indiqué est faux ou trompeur)</option>
+                  <option value="photos volées">photos volées (Les photos ne sont pas authentiques)</option>
+                  <option value="autre">autre (Autre motif à préciser)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">
+                  Explications complémentaires (optionnel)
+                </label>
+                <textarea
+                  value={reportDescription}
+                  onChange={(e) => setReportDescription(e.target.value)}
+                  placeholder="Expliquez brièvement les faits constatés..."
+                  rows={3}
+                  className="w-full text-sm bg-gray-50 dark:bg-[#1a2d22] border border-gray-300 dark:border-gray-700 rounded-xl p-3 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#0F6B3F]"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
                   onClick={() => setShowReportDialog(false)}
-                  className="px-4 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-100 rounded-lg"
+                  className="px-4 py-2 text-xs font-semibold text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg"
                 >
                   Annuler
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 text-xs font-bold bg-red-600 text-white rounded-lg hover:bg-red-700"
+                  className="px-4 py-2 text-xs font-bold bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors shadow"
                 >
                   Envoyer le signalement
                 </button>

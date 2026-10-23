@@ -1,10 +1,11 @@
 import React from 'react';
 import { useApp } from '../context/AppContext';
 import { ListingCard } from './ListingCard';
+import { SkeletonListingGrid } from './SkeletonListingCard';
 import { Heart, Search } from 'lucide-react';
 
 export const FavoritesView: React.FC = () => {
-  const { listings, favorites, setActiveTab } = useApp();
+  const { listings, favorites, setActiveTab, isLoadingListings } = useApp();
 
   const favoriteListings = listings.filter((l) => favorites.includes(l.id));
 
@@ -21,7 +22,9 @@ export const FavoritesView: React.FC = () => {
         </div>
       </div>
 
-      {favoriteListings.length === 0 ? (
+      {isLoadingListings ? (
+        <SkeletonListingGrid count={4} />
+      ) : favoriteListings.length === 0 ? (
         <div className="bg-white dark:bg-[#16261c] rounded-3xl p-10 text-center border border-dashed border-gray-300 dark:border-gray-800 space-y-3">
           <div className="w-14 h-14 rounded-full bg-red-50 dark:bg-red-950/40 text-red-500 mx-auto flex items-center justify-center">
             <Heart className="w-7 h-7" />

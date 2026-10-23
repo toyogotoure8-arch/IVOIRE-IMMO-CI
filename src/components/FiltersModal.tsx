@@ -5,7 +5,8 @@ import { X, RotateCcw, Check, BellRing, Navigation } from 'lucide-react';
 import { CategoryType } from '../types';
 
 export const FiltersModal: React.FC = () => {
-  const { filters, setFilters, resetFilters, setIsFiltersOpen, createAlert, currentUser, setShowAuthModal, setActiveTab } = useApp();
+  const { filters, setFilters, resetFilters, setIsFiltersOpen, createAlert, currentUser, setShowAuthModal, setActiveTab, userCoords, requestUserLocation } = useApp();
+
 
   const handleEquipementToggle = (id: string) => {
     setFilters((prev) => {
@@ -233,16 +234,22 @@ export const FiltersModal: React.FC = () => {
             <label className="block text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-300 mb-2">
               Ordre de tri
             </label>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               {[
                 { id: 'recent', label: 'Plus récents' },
                 { id: 'prix_croissant', label: 'Prix croissant' },
                 { id: 'prix_decroissant', label: 'Prix décroissant' },
+                { id: 'proximite', label: '📍 Proximité GPS' },
               ].map((t) => (
                 <button
                   key={t.id}
                   type="button"
-                  onClick={() => setFilters((prev) => ({ ...prev, tri: t.id as any }))}
+                  onClick={() => {
+                    if (t.id === 'proximite' && !userCoords) {
+                      requestUserLocation();
+                    }
+                    setFilters((prev) => ({ ...prev, tri: t.id as any }));
+                  }}
                   className={`py-2 px-2.5 rounded-xl text-xs font-bold border transition-all ${
                     filters.tri === t.id
                       ? 'bg-[#0F6B3F] text-white border-[#0F6B3F]'
@@ -254,6 +261,7 @@ export const FiltersModal: React.FC = () => {
               ))}
             </div>
           </div>
+
         </div>
 
         {/* Footer Actions */}

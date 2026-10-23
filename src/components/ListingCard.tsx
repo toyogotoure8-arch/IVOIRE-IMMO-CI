@@ -2,6 +2,7 @@ import React from 'react';
 import { Listing } from '../types';
 import { formatFCFA, calculateDistanceKm } from '../utils/calculations';
 import { useApp } from '../context/AppContext';
+import { ShareButton } from './ShareButton';
 import {
   Heart,
   MapPin,
@@ -19,8 +20,10 @@ interface Props {
 }
 
 export const ListingCard: React.FC<Props> = ({ listing }) => {
-  const { setSelectedListing, favorites, toggleFavorite, userCoords, incrementListingMetric } = useApp();
+  const { setSelectedListing, favorites, toggleFavorite, userCoords, incrementListingMetric, compareListings, toggleCompare } = useApp();
   const isFavorite = favorites.includes(listing.id);
+  const isCompared = compareListings.includes(listing.id);
+  const [imgLoaded, setImgLoaded] = React.useState(false);
 
   const priceLabel =
     listing.categorie === 'location'
@@ -59,16 +62,24 @@ export const ListingCard: React.FC<Props> = ({ listing }) => {
       className="group relative bg-white dark:bg-[#16261c] rounded-2xl overflow-hidden border border-gray-200/80 dark:border-gray-800 shadow-sm hover:shadow-md transition-all duration-200 cursor-pointer flex flex-col active:scale-[0.99]"
     >
       {/* Photo Container */}
-      <div className="relative aspect-4/3 w-full overflow-hidden bg-gray-100 dark:bg-gray-800">
+      <div className="relative aspect-4/3 w-full overflow-hidden bg-gray-200 dark:bg-gray-800">
+        {!imgLoaded && (
+          <div className="absolute inset-0 bg-gray-300 dark:bg-gray-700 animate-pulse z-0" />
+        )}
         <img
           src={listing.photos[0] || 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?auto=format&fit=crop&w=600&q=80'}
           alt={listing.titre}
           loading="lazy"
+          onLoad={() => setImgLoaded(true)}
           onError={(e) => {
+            setImgLoaded(true);
             (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?auto=format&fit=crop&w=600&q=80';
           }}
-          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+          className={`w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 relative z-1 ${
+            imgLoaded ? 'opacity-100' : 'opacity-0'
+          }`}
         />
+
 
         {/* Top Badges */}
         <div className="absolute top-2.5 left-2.5 flex flex-wrap gap-1.5 items-center">
@@ -80,24 +91,42 @@ export const ListingCard: React.FC<Props> = ({ listing }) => {
               Exemple
             </span>
           )}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleCompare(listing.id);
+            }}
+            className={`text-[10px] font-extrabold px-2 py-1 rounded-full shadow transition-all backdrop-blur-md ${
+              isCompared
+                ? 'bg-[#0F6B3F] text-white'
+                : 'bg-white/90 dark:bg-black/70 text-gray-800 dark:text-gray-200 hover:bg-emerald-50'
+            }`}
+            title="Ajouter au comparateur (max 3)"
+          >
+            ⚖️ {isCompared ? 'Comparé' : 'Comparer'}
+          </button>
         </div>
 
-        {/* Favorite Button */}
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            toggleFavorite(listing.id);
-          }}
-          aria-label={isFavorite ? 'Retirer des favoris' : 'Ajouter aux favoris'}
-          className="absolute top-2.5 right-2.5 p-2 rounded-full bg-white/90 dark:bg-black/70 backdrop-blur-sm text-gray-700 dark:text-gray-200 hover:text-red-500 active:scale-90 transition-all shadow-sm"
-        >
-          <Heart
-            className={`w-4 h-4 transition-colors ${
-              isFavorite ? 'fill-red-500 text-red-500' : 'text-gray-600 dark:text-gray-300'
-            }`}
-          />
-        </button>
+        {/* Top Right Actions: Favorite & Share */}
+        <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5">
+          <ShareButton listing={listing} variant="icon" />
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleFavorite(listing.id);
+            }}
+            aria-label={isFavorite ? 'Retirer des favoris' : 'Ajouter aux favoris'}
+            className="p-2 rounded-full bg-white/90 dark:bg-black/70 backdrop-blur-sm text-gray-700 dark:text-gray-200 hover:text-red-500 active:scale-90 transition-all shadow-sm"
+          >
+            <Heart
+              className={`w-4 h-4 transition-colors ${
+                isFavorite ? 'fill-red-500 text-red-500' : 'text-gray-600 dark:text-gray-300'
+              }`}
+            />
+          </button>
+        </div>
 
         {/* Verified Owner Badge */}
         {listing.ownerVerifie && (

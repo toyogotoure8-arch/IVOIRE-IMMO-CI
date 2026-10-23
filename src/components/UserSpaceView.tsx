@@ -4,6 +4,9 @@ import { OwnerDashboard } from './OwnerDashboard';
 import { AdminDashboard } from './AdminDashboard';
 import { BookingsView } from './BookingsView';
 import { MessagesView } from './MessagesView';
+import { FaqImmobilierSection } from './FaqImmobilierSection';
+import { OwnerPromoterGuideSection } from './OwnerPromoterGuideSection';
+import { ActualitesConseilsSection } from './ActualitesConseilsSection';
 import { formatIvorianPhone } from '../utils/calculations';
 import {
   User,
@@ -18,6 +21,8 @@ import {
   ArrowRight,
   Shield,
   HelpCircle,
+  BookOpen,
+  Newspaper,
 } from 'lucide-react';
 
 interface Props {
@@ -34,27 +39,45 @@ export const UserSpaceView: React.FC<Props> = ({ onOpenPublish, onOpenAlerts }) 
     logout,
   } = useApp();
 
-  const [clientSubTab, setClientSubTab] = useState<'reservations' | 'messages'>('reservations');
+  const [clientSubTab, setClientSubTab] = useState<'reservations' | 'messages' | 'faq' | 'guide' | 'actualites'>('reservations');
+  const [showGuestFaq, setShowGuestFaq] = useState(false);
 
   if (!currentUser) {
     return (
-      <div className="bg-white dark:bg-[#16261c] rounded-3xl p-8 sm:p-10 text-center border border-gray-200/80 dark:border-gray-800 shadow-sm max-w-lg mx-auto space-y-4 my-8">
-        <div className="w-16 h-16 rounded-full bg-[#0F6B3F]/10 text-[#0F6B3F] mx-auto flex items-center justify-center">
-          <User className="w-8 h-8" />
+      <div className="space-y-6 max-w-4xl mx-auto my-4">
+        {/* Unauthenticated Login Card */}
+        <div className="bg-white dark:bg-[#16261c] rounded-3xl p-8 sm:p-10 text-center border border-gray-200/80 dark:border-gray-800 shadow-sm max-w-lg mx-auto space-y-4">
+          <div className="w-16 h-16 rounded-full bg-[#0F6B3F]/10 text-[#0F6B3F] mx-auto flex items-center justify-center">
+            <User className="w-8 h-8" />
+          </div>
+          <h3 className="text-xl font-black text-gray-900 dark:text-white">
+            Accéder à mon espace
+          </h3>
+          <p className="text-xs sm:text-sm text-gray-500 max-w-sm mx-auto">
+            Connectez-vous avec votre numéro de téléphone ou votre compte Google pour gérer vos annonces, réservations et messages.
+          </p>
+          <button
+            type="button"
+            onClick={() => setShowAuthModal(true)}
+            className="w-full py-3.5 px-4 bg-[#0F6B3F] hover:bg-[#0B5431] text-white rounded-2xl text-sm font-extrabold shadow-md active:scale-[0.98] transition-all"
+          >
+            Se connecter / S'inscrire
+          </button>
+
+          <div className="pt-3 border-t border-gray-100 dark:border-gray-800">
+            <button
+              type="button"
+              onClick={() => setShowGuestFaq((prev) => !prev)}
+              className="text-xs font-bold text-[#0F6B3F] dark:text-[#34D399] hover:underline flex items-center justify-center gap-1.5 mx-auto"
+            >
+              <HelpCircle className="w-4 h-4" />
+              <span>{showGuestFaq ? "Masquer la FAQ Immobilier CI" : "Consulter la FAQ & Guide Juridique (Sans connexion)"}</span>
+            </button>
+          </div>
         </div>
-        <h3 className="text-xl font-black text-gray-900 dark:text-white">
-          Accéder à mon espace
-        </h3>
-        <p className="text-xs sm:text-sm text-gray-500 max-w-sm mx-auto">
-          Connectez-vous avec votre numéro de téléphone ou votre compte Google pour gérer vos annonces, réservations et messages.
-        </p>
-        <button
-          type="button"
-          onClick={() => setShowAuthModal(true)}
-          className="w-full py-3.5 px-4 bg-[#0F6B3F] hover:bg-[#0B5431] text-white rounded-2xl text-sm font-extrabold shadow-md active:scale-[0.98] transition-all"
-        >
-          Se connecter / S'inscrire
-        </button>
+
+        {/* Guest FAQ Section Toggle */}
+        {showGuestFaq && <FaqImmobilierSection />}
       </div>
     );
   }
@@ -110,8 +133,88 @@ export const UserSpaceView: React.FC<Props> = ({ onOpenPublish, onOpenAlerts }) 
         </button>
       </div>
 
-      {/* Role specific dashboard */}
-      {currentUser.role === 'admin' ? (
+      {/* Navigation bar for switching sub-views */}
+      <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar border-b border-gray-200 dark:border-gray-800">
+        <button
+          type="button"
+          onClick={() => setClientSubTab('reservations')}
+          className={`pb-3 px-3 text-xs sm:text-sm font-extrabold border-b-2 transition-all flex items-center gap-2 whitespace-nowrap ${
+            clientSubTab === 'reservations'
+              ? 'border-[#0F6B3F] text-[#0F6B3F] dark:text-[#34D399]'
+              : 'border-transparent text-gray-500 hover:text-gray-800 dark:hover:text-gray-300'
+          }`}
+        >
+          <CalendarCheck className="w-4 h-4" />
+          <span>
+            {currentUser.role === 'proprietaire'
+              ? 'Gestion de mes Biens'
+              : currentUser.role === 'admin'
+              ? 'Administration'
+              : 'Mes Réservations'}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setClientSubTab('messages')}
+          className={`pb-3 px-3 text-xs sm:text-sm font-extrabold border-b-2 transition-all flex items-center gap-2 whitespace-nowrap ${
+            clientSubTab === 'messages'
+              ? 'border-[#0F6B3F] text-[#0F6B3F] dark:text-[#34D399]'
+              : 'border-transparent text-gray-500 hover:text-gray-800 dark:hover:text-gray-300'
+          }`}
+        >
+          <MessageSquare className="w-4 h-4" />
+          <span>Messages & Contact</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setClientSubTab('faq')}
+          className={`pb-3 px-3 text-xs sm:text-sm font-extrabold border-b-2 transition-all flex items-center gap-2 whitespace-nowrap ${
+            clientSubTab === 'faq'
+              ? 'border-[#0F6B3F] text-[#0F6B3F] dark:text-[#34D399]'
+              : 'border-transparent text-gray-500 hover:text-gray-800 dark:hover:text-gray-300'
+          }`}
+        >
+          <HelpCircle className="w-4 h-4 text-amber-500" />
+          <span>FAQ & Guide Juridique CI</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setClientSubTab('guide')}
+          className={`pb-3 px-3 text-xs sm:text-sm font-extrabold border-b-2 transition-all flex items-center gap-2 whitespace-nowrap ${
+            clientSubTab === 'guide'
+              ? 'border-[#0F6B3F] text-[#0F6B3F] dark:text-[#34D399]'
+              : 'border-transparent text-gray-500 hover:text-gray-800 dark:hover:text-gray-300'
+          }`}
+        >
+          <BookOpen className="w-4 h-4 text-[#F28C1B]" />
+          <span>Guide des Propriétaires</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setClientSubTab('actualites')}
+          className={`pb-3 px-3 text-xs sm:text-sm font-extrabold border-b-2 transition-all flex items-center gap-2 whitespace-nowrap ${
+            clientSubTab === 'actualites'
+              ? 'border-[#0F6B3F] text-[#0F6B3F] dark:text-[#34D399]'
+              : 'border-transparent text-gray-500 hover:text-gray-800 dark:hover:text-gray-300'
+          }`}
+        >
+          <Newspaper className="w-4 h-4 text-blue-500" />
+          <span>Actualités & Conseils</span>
+        </button>
+      </div>
+
+      {/* Tab View */}
+      {clientSubTab === 'faq' ? (
+        <FaqImmobilierSection />
+      ) : clientSubTab === 'guide' ? (
+        <OwnerPromoterGuideSection />
+      ) : clientSubTab === 'actualites' ? (
+        <ActualitesConseilsSection />
+      ) : currentUser.role === 'admin' ? (
         <AdminDashboard />
       ) : currentUser.role === 'proprietaire' ? (
         <OwnerDashboard onOpenPublish={onOpenPublish} />
@@ -186,3 +289,4 @@ export const UserSpaceView: React.FC<Props> = ({ onOpenPublish, onOpenAlerts }) 
     </div>
   );
 };
+

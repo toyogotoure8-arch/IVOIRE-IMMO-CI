@@ -105,12 +105,14 @@
         "id": { "type": "string", "maxLength": 128 },
         "listingId": { "type": "string", "maxLength": 128 },
         "listingTitre": { "type": "string", "maxLength": 150 },
+        "ownerId": { "type": "string", "maxLength": 128 },
         "userId": { "type": "string", "maxLength": 128 },
         "motif": { "type": "string", "maxLength": 500 },
+        "description": { "type": "string", "maxLength": 2000 },
         "statut": { "type": "string", "enum": ["en_attente", "traite"] },
         "dateCreation": { "type": "string", "format": "date-time" }
       },
-      "required": ["id", "listingId", "userId", "motif", "statut"]
+      "required": ["id", "listingId", "ownerId", "userId", "motif", "statut"]
     },
     "Message": {
       "title": "Message",

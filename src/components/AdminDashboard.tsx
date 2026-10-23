@@ -309,17 +309,38 @@ export const AdminDashboard: React.FC = () => {
                   </span>
                 </div>
 
-                <div className="bg-red-50/50 dark:bg-red-950/20 p-3 rounded-xl text-xs text-red-900 dark:text-red-300">
-                  <strong className="block mb-1">Motif du signalement :</strong>
-                  "{rep.motif}"
+                <div className="bg-red-50/50 dark:bg-red-950/20 p-3 rounded-xl text-xs text-red-900 dark:text-red-300 space-y-1">
+                  <div>
+                    <strong className="font-bold">Motif : </strong>
+                    <span className="font-extrabold uppercase bg-red-100 dark:bg-red-900/60 px-2 py-0.5 rounded text-[11px] text-red-800 dark:text-red-200">
+                      {rep.motif}
+                    </span>
+                  </div>
+                  {rep.description && (
+                    <p className="mt-1 text-gray-700 dark:text-gray-300">
+                      <strong>Explications :</strong> {rep.description}
+                    </p>
+                  )}
+                  <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1">
+                    Propriétaire ID : <span className="font-mono">{rep.ownerId || 'Non spécifié'}</span>
+                  </p>
                 </div>
 
                 {rep.statut === 'en_attente' && (
                   <div className="flex justify-end gap-2 pt-1">
+                    {rep.ownerId && (
+                      <button
+                        type="button"
+                        onClick={() => toggleUserBlock(rep.ownerId)}
+                        className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold"
+                      >
+                        Suspendre le propriétaire
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => resolveReport(rep.id)}
-                      className="px-3 py-1.5 bg-[#0F6B3F] text-white rounded-lg text-xs font-bold"
+                      className="px-3 py-1.5 bg-[#0F6B3F] hover:bg-[#0B5431] text-white rounded-lg text-xs font-bold"
                     >
                       Marquer comme résolu
                     </button>

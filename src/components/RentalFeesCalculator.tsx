@@ -17,8 +17,8 @@ export const RentalFeesCalculator: React.FC<Props> = ({ initialRent }) => {
           <Calculator className="w-5 h-5" />
         </div>
         <div>
-          <h4 className="font-bold text-base leading-tight">Calculateur de frais d'entrée</h4>
-          <p className="text-xs text-gray-600 dark:text-gray-300">Estimation selon les règles locatives en Côte d'Ivoire</p>
+          <h4 className="font-bold text-base leading-tight">Calculateur de frais d'installation</h4>
+          <p className="text-xs text-gray-600 dark:text-gray-300">Estimation pour bail de location en Côte d'Ivoire</p>
         </div>
       </div>
 
@@ -51,7 +51,7 @@ export const RentalFeesCalculator: React.FC<Props> = ({ initialRent }) => {
         <div className="flex justify-between items-center text-gray-700 dark:text-gray-200">
           <span className="flex items-center gap-1.5">
             <ShieldCheck className="w-4 h-4 text-[#0F6B3F]" />
-            Caution (2 mois de garantie) :
+            2 mois de caution :
           </span>
           <span className="font-semibold">{formatFCFA(breakdown.cautionAmount)}</span>
         </div>
@@ -59,23 +59,23 @@ export const RentalFeesCalculator: React.FC<Props> = ({ initialRent }) => {
         <div className="flex justify-between items-center text-gray-700 dark:text-gray-200">
           <span className="flex items-center gap-1.5">
             <CalendarCheck className="w-4 h-4 text-[#0F6B3F]" />
-            Avance de loyer (2 mois) :
+            2 mois d'avance :
           </span>
           <span className="font-semibold">{formatFCFA(breakdown.advanceAmount)}</span>
         </div>
 
         <div className="flex justify-between items-center pt-2.5 border-t border-dashed border-[#0F6B3F]/30 text-base font-extrabold text-[#0F6B3F] dark:text-[#34D399]">
-          <span>Total à prévoir à l'entrée :</span>
+          <span>Total frais d'installation :</span>
           <span className="text-lg bg-[#0F6B3F]/10 px-2.5 py-1 rounded-lg">
             {formatFCFA(breakdown.totalEstimated)}
           </span>
         </div>
       </div>
 
-      <div className="mt-3.5 flex items-start gap-2 text-xs text-gray-500 dark:text-gray-400 bg-white/70 dark:bg-black/20 p-2.5 rounded-xl border border-gray-200/50 dark:border-gray-800">
+      <div className="mt-3.5 flex items-start gap-2 text-xs text-gray-600 dark:text-gray-300 bg-amber-500/10 dark:bg-amber-500/20 p-2.5 rounded-xl border border-amber-500/30">
         <Info className="w-4 h-4 shrink-0 text-[#F28C1B] mt-0.5" />
         <p>
-          <span className="font-semibold">Rappel légal :</span> {breakdown.notice}
+          <span className="font-bold">Avertissement :</span> Ceci est une estimation indicative hors frais d'agence ou frais de dossier.
         </p>
       </div>
     </div>

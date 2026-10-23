@@ -16,6 +16,7 @@ import {
   Hotel,
   History,
   X,
+  Loader2,
 } from 'lucide-react';
 
 export const SearchBanner: React.FC = () => {
@@ -27,12 +28,14 @@ export const SearchBanner: React.FC = () => {
     setIsMapView,
     requestUserLocation,
     userCoords,
+    isLocationLoading,
     filteredListings,
     recentSearches,
     recordSearch,
     removeSearch,
     clearAllSearches,
   } = useApp();
+
 
   const handleCategoryClick = (cat: CategoryType | 'toutes') => {
     setFilters((prev) => ({ ...prev, categorie: cat }));
@@ -213,15 +216,27 @@ export const SearchBanner: React.FC = () => {
         <button
           type="button"
           onClick={requestUserLocation}
+          disabled={isLocationLoading}
           className={`px-3.5 py-2 rounded-xl text-xs font-bold shrink-0 transition-all active:scale-95 flex items-center gap-1.5 shadow-sm border ${
             userCoords
               ? 'bg-blue-600 text-white border-blue-600'
               : 'bg-white dark:bg-[#16261c] text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-900/50 hover:bg-blue-50'
           }`}
         >
-          <Navigation className="w-3.5 h-3.5 fill-current" />
-          <span>{userCoords ? 'Autour de moi (Actif)' : 'Autour de moi'}</span>
+          {isLocationLoading ? (
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+          ) : (
+            <Navigation className="w-3.5 h-3.5 fill-current" />
+          )}
+          <span>
+            {isLocationLoading
+              ? 'Recherche GPS...'
+              : userCoords
+              ? 'Autour de moi (Actif)'
+              : 'Autour de moi'}
+          </span>
         </button>
+
       </div>
 
       {/* Results Header Count & Sort Quick Display */}
@@ -232,8 +247,9 @@ export const SearchBanner: React.FC = () => {
         </span>
 
         <span className="text-[11px] font-medium">
-          Tri : {filters.tri === 'recent' ? 'Plus récents' : filters.tri === 'prix_croissant' ? 'Prix croissant' : 'Prix décroissant'}
+          Tri : {filters.tri === 'recent' ? 'Plus récents' : filters.tri === 'prix_croissant' ? 'Prix croissant' : filters.tri === 'prix_decroissant' ? 'Prix décroissant' : '📍 Proximité GPS'}
         </span>
+
       </div>
     </div>
   );

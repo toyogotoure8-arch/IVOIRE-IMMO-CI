@@ -90,12 +90,16 @@ export interface SearchAlert {
   dateCreation: string;
 }
 
+export type ReportReason = 'arnaque' | 'bien déjà loué' | 'prix faux' | 'photos volées' | 'autre';
+
 export interface Report {
   id: string;
   listingId: string;
   listingTitre: string;
+  ownerId: string;
   userId: string;
-  motif: string;
+  motif: ReportReason | string;
+  description?: string;
   statut: 'en_attente' | 'traite';
   dateCreation: string;
 }
@@ -118,7 +122,8 @@ export interface FilterCriteria {
   budgetMax: number | '';
   pieces: number | 'toutes';
   equipements: string[];
-  tri: 'recent' | 'prix_croissant' | 'prix_decroissant';
+  tri: 'recent' | 'prix_croissant' | 'prix_decroissant' | 'proximite';
   maxDistanceKm?: number;
   userLocation?: { lat: number; lng: number };
 }
+

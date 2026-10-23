@@ -2,60 +2,170 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // Helper functions
     function isSignedIn() {
       return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
 
     function isAdmin() {
       return isSignedIn() && (
         exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && getUserData().role == 'admin') ||
         request.auth.token.email == 'toyogotoure8@gmail.com'
       );
     }
 
     // USERS COLLECTION
-    // Allows phone and email registrations to save and retrieve user profiles
     match /users/{userId} {
-      allow read, write: if true;
+      // Any user can read profiles (or user can read own profile)
+      allow read: if true;
+      // User can create own profile as client or proprietaire
+      allow create: if isOwner(userId) && 
+        (request.resource.data.verifie != true || isAdmin()) &&
+        (request.resource.data.role != 'admin' || isAdmin());
+      // User can update own profile, or admin, or update bloque status on suspension
+      allow update: if (isOwner(userId) || isAdmin() || (isSignedIn() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['bloque']))) &&
+        (
+          isAdmin() ||
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['bloque']) ||
+          (
+            (!('verifie' in request.resource.data) || request.resource.data.verifie == resource.data.verifie) &&
+            (!('role' in request.resource.data) || request.resource.data.role == resource.data.role)
+          )
+        );
+      allow delete: if isAdmin();
     }
 
     // LISTINGS COLLECTION
-    // Public reading of listings; creation permitted for verified and phone users (moderated in 'en_attente' status)
     match /listings/{listingId} {
-      allow read: if true;
-      allow create: if true;
-      allow update: if true;
-      allow delete: if isSignedIn() || true;
+      // Published listings are readable by EVERYONE, even unauthenticated
+      // Draft/pending listings are readable by owner or admin
+      allow read: if resource == null || 
+        resource.data.statut == 'publiee' || 
+        (isSignedIn() && (resource.data.ownerId == request.auth.uid || isAdmin()));
+
+      // Create: Owner can create listing, but setting statut == 'publiee' or ownerVerifie == true requires admin
+      allow create: if isSignedIn() && 
+        (request.resource.data.ownerId == request.auth.uid || isAdmin()) &&
+        (request.resource.data.statut != 'publiee' || isAdmin()) &&
+        (request.resource.data.ownerVerifie != true || isAdmin());
+
+      // Update: Owner can update their listing, but transitioning/setting statut == 'publiee' or ownerVerifie requires admin
+      allow update: if (isSignedIn() && (resource.data.ownerId == request.auth.uid || isAdmin())) &&
+        (
+          isAdmin() ||
+          (
+            (request.resource.data.statut != 'publiee') &&
+            (!('ownerVerifie' in request.resource.data) || request.resource.data.ownerVerifie == resource.data.ownerVerifie)
+          )
+        );
+
+      // Delete: Owner or Admin
+      allow delete: if isSignedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
     }
 
     // BOOKINGS COLLECTION
     match /bookings/{bookingId} {
-      allow read, write: if true;
+      // Only the client, listing owner, or admin can read bookings
+      allow read: if isSignedIn() && (
+        resource.data.clientId == request.auth.uid ||
+        resource.data.ownerId == request.auth.uid ||
+        isAdmin()
+      );
+      // Client can create booking for themselves
+      allow create: if isSignedIn() && (
+        request.resource.data.clientId == request.auth.uid ||
+        isAdmin()
+      );
+      // Client, Owner or Admin can update/delete booking
+      allow update, delete: if isSignedIn() && (
+        resource.data.clientId == request.auth.uid ||
+        resource.data.ownerId == request.auth.uid ||
+        isAdmin()
+      );
     }
 
     // FAVORITES COLLECTION
     match /favorites/{favoriteId} {
-      allow read, write: if true;
+      // Client can only read their own favorites
+      allow read: if isSignedIn() && (
+        resource.data.userId == request.auth.uid ||
+        isAdmin()
+      );
+      // Client can create favorite for themselves
+      allow create: if isSignedIn() && (
+        request.resource.data.userId == request.auth.uid ||
+        isAdmin()
+      );
+      // Client can update or delete their favorite
+      allow update, delete: if isSignedIn() && (
+        resource.data.userId == request.auth.uid ||
+        isAdmin()
+      );
     }
 
     // ALERTS COLLECTION
     match /alerts/{alertId} {
-      allow read, write: if true;
+      // Client can only read their own search alerts
+      allow read: if isSignedIn() && (
+        resource.data.userId == request.auth.uid ||
+        isAdmin()
+      );
+      // Client can create alert for themselves
+      allow create: if isSignedIn() && (
+        request.resource.data.userId == request.auth.uid ||
+        isAdmin()
+      );
+      // Client can update or delete their alert
+      allow update, delete: if isSignedIn() && (
+        resource.data.userId == request.auth.uid ||
+        isAdmin()
+      );
     }
 
     // REPORTS COLLECTION
     match /reports/{reportId} {
-      allow read, write: if true;
+      allow read: if isSignedIn() && (
+        resource.data.userId == request.auth.uid ||
+        resource.data.ownerId == request.auth.uid ||
+        isAdmin()
+      );
+      allow create: if isSignedIn() && (
+        request.resource.data.userId == request.auth.uid ||
+        isAdmin()
+      );
+      allow update, delete: if isAdmin();
     }
 
     // MESSAGES COLLECTION
     match /messages/{messageId} {
-      allow read, write: if true;
+      allow read: if isSignedIn() && (
+        resource.data.senderId == request.auth.uid ||
+        resource.data.receiverId == request.auth.uid ||
+        isAdmin()
+      );
+      allow create: if isSignedIn() && (
+        request.resource.data.senderId == request.auth.uid ||
+        isAdmin()
+      );
+      allow update, delete: if isSignedIn() && (
+        resource.data.senderId == request.auth.uid ||
+        isAdmin()
+      );
     }
 
     // ADMINS COLLECTION
     match /admins/{adminId} {
-      allow read, write: if true;
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
     }
   }
 }
