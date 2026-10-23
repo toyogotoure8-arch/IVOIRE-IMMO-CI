@@ -1,0 +1,167 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "Profil utilisateur IvoireImmo (client, propriétaire ou admin)",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "nom": { "type": "string", "maxLength": 100 },
+        "telephone": { "type": "string", "maxLength": 30 },
+        "email": { "type": "string", "maxLength": 120 },
+        "role": { "type": "string", "enum": ["client", "proprietaire", "admin"] },
+        "verifie": { "type": "boolean" },
+        "pieceIdentiteUrl": { "type": "string", "maxLength": 500 },
+        "pieceIdentiteStatut": { "type": "string", "enum": ["non_fournie", "en_attente", "validee", "rejetee"] },
+        "bloque": { "type": "boolean" },
+        "dateCreation": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "nom", "role", "verifie"]
+    },
+    "Listing": {
+      "title": "Listing",
+      "description": "Annonce de location, vente, meublé ou hôtel en Côte d'Ivoire",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "ownerId": { "type": "string", "maxLength": 128 },
+        "ownerNom": { "type": "string", "maxLength": 100 },
+        "ownerTelephone": { "type": "string", "maxLength": 30 },
+        "ownerVerifie": { "type": "boolean" },
+        "categorie": { "type": "string", "enum": ["location", "vente", "meuble", "hotel"] },
+        "type": { "type": "string", "maxLength": 50 },
+        "titre": { "type": "string", "maxLength": 150 },
+        "description": { "type": "string", "maxLength": 4000 },
+        "prix": { "type": "number" },
+        "commune": { "type": "string", "maxLength": 60 },
+        "quartier": { "type": "string", "maxLength": 100 },
+        "pieces": { "type": "number" },
+        "equipements": { "type": "array" },
+        "photos": { "type": "array" },
+        "position": { "type": "object" },
+        "statut": { "type": "string", "enum": ["en_attente", "publiee", "rejetee", "masquee"] },
+        "motifRejet": { "type": "string", "maxLength": 500 },
+        "vues": { "type": "number" },
+        "contacts": { "type": "number" },
+        "demandes": { "type": "number" },
+        "datesOccupees": { "type": "array" },
+        "isExemple": { "type": "boolean" },
+        "dateCreation": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "ownerId", "categorie", "titre", "prix", "commune", "statut"]
+    },
+    "Booking": {
+      "title": "Booking",
+      "description": "Demande de réservation d'hôtel ou logement meublé",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "listingId": { "type": "string", "maxLength": 128 },
+        "listingTitre": { "type": "string", "maxLength": 150 },
+        "clientId": { "type": "string", "maxLength": 128 },
+        "clientNom": { "type": "string", "maxLength": 100 },
+        "clientTelephone": { "type": "string", "maxLength": 30 },
+        "ownerId": { "type": "string", "maxLength": 128 },
+        "dateArrivee": { "type": "string" },
+        "dateDepart": { "type": "string" },
+        "nuits": { "type": "number" },
+        "montantTotal": { "type": "number" },
+        "statut": { "type": "string", "enum": ["demandee", "acceptee", "refusee"] },
+        "dateCreation": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "listingId", "clientId", "ownerId", "dateArrivee", "dateDepart", "montantTotal", "statut"]
+    },
+    "Favorite": {
+      "title": "Favorite",
+      "description": "Annonce sauvegardée en favori par un client",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "listingId": { "type": "string", "maxLength": 128 },
+        "dateCreation": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "listingId"]
+    },
+    "Alert": {
+      "title": "Alert",
+      "description": "Critère de recherche sauvegardé pour notifications",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "categorie": { "type": "string", "maxLength": 50 },
+        "commune": { "type": "string", "maxLength": 60 },
+        "budgetMax": { "type": "number" },
+        "dateCreation": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId"]
+    },
+    "Report": {
+      "title": "Report",
+      "description": "Signalement d'une annonce suspecte ou non conforme",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "listingId": { "type": "string", "maxLength": 128 },
+        "listingTitre": { "type": "string", "maxLength": 150 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "motif": { "type": "string", "maxLength": 500 },
+        "statut": { "type": "string", "enum": ["en_attente", "traite"] },
+        "dateCreation": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "listingId", "userId", "motif", "statut"]
+    },
+    "Message": {
+      "title": "Message",
+      "description": "Message direct entre client et propriétaire",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "listingId": { "type": "string", "maxLength": 128 },
+        "senderId": { "type": "string", "maxLength": 128 },
+        "senderNom": { "type": "string", "maxLength": 100 },
+        "receiverId": { "type": "string", "maxLength": 128 },
+        "texte": { "type": "string", "maxLength": 1000 },
+        "dateCreation": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "senderId", "receiverId", "texte"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "#/entities/User",
+      "description": "Profils des utilisateurs"
+    },
+    "/listings/{listingId}": {
+      "schema": "#/entities/Listing",
+      "description": "Annonces immobilières et hôtelières"
+    },
+    "/bookings/{bookingId}": {
+      "schema": "#/entities/Booking",
+      "description": "Demandes et réservations"
+    },
+    "/favorites/{favoriteId}": {
+      "schema": "#/entities/Favorite",
+      "description": "Favoris des utilisateurs"
+    },
+    "/alerts/{alertId}": {
+      "schema": "#/entities/Alert",
+      "description": "Alertes de recherche critères"
+    },
+    "/reports/{reportId}": {
+      "schema": "#/entities/Report",
+      "description": "Signalements d'annonces"
+    },
+    "/messages/{messageId}": {
+      "schema": "#/entities/Message",
+      "description": "Messages directs"
+    },
+    "/admins/{adminId}": {
+      "schema": {
+        "$ref": "#/entities/User"
+      },
+      "description": "Documents d'identification des administrateurs"
+    }
+  }
+}

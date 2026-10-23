@@ -1,0 +1,879 @@
+import React, { createContext, useContext, useState, useEffect } from 'react';
+import {
+  Listing,
+  UserProfile,
+  Booking,
+  Favorite,
+  SearchAlert,
+  Report,
+  Message,
+  CategoryType,
+  FilterCriteria,
+  UserRole,
+} from '../types';
+import { DEMO_LISTINGS, TOUTES_LOCALITES } from '../constants/ciData';
+import { calculateDistanceKm } from '../utils/calculations';
+import { RecentSearch, DEFAULT_RECENT_SEARCHES, addRecentSearch, deleteRecentSearch } from '../utils/recentSearches';
+import { db, auth, googleProvider, handleFirestoreError, OperationType, testFirestoreConnection } from '../services/firebase';
+import { doc, setDoc, getDoc, collection, getDocs, updateDoc, deleteDoc } from 'firebase/firestore';
+import { signInWithPopup, signOut as fbSignOut, onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
+
+interface AppContextType {
+  // Auth & Profile
+  currentUser: UserProfile | null;
+  firebaseUser: FirebaseUser | null;
+  isAuthLoading: boolean;
+  loginWithGoogle: () => Promise<void>;
+  loginWithPhone: (phone: string, role?: UserRole, customName?: string) => Promise<void>;
+  logout: () => Promise<void>;
+  switchRole: (role: UserRole) => Promise<void>;
+  showAuthModal: boolean;
+  setShowAuthModal: (show: boolean) => void;
+  showRoleModal: boolean;
+  setShowRoleModal: (show: boolean) => void;
+  updateUserVerification: (idCardUrl: string, type: string) => Promise<void>;
+
+  // Navigation
+  activeTab: 'accueil' | 'favoris' | 'publier' | 'mon_espace';
+  setActiveTab: (tab: 'accueil' | 'favoris' | 'publier' | 'mon_espace') => void;
+  selectedListing: Listing | null;
+  setSelectedListing: (listing: Listing | null) => void;
+  isFiltersOpen: boolean;
+  setIsFiltersOpen: (open: boolean) => void;
+  isMapView: boolean;
+  setIsMapView: (map: boolean) => void;
+  userCoords: { lat: number; lng: number } | null;
+  requestUserLocation: () => void;
+
+  // Listings & Filtering
+  listings: Listing[];
+  filteredListings: Listing[];
+  filters: FilterCriteria;
+  setFilters: React.Dispatch<React.SetStateAction<FilterCriteria>>;
+  resetFilters: () => void;
+  addListing: (listingData: Omit<Listing, 'id' | 'dateCreation' | 'vues' | 'contacts' | 'demandes'>) => Promise<string>;
+  updateListing: (id: string, updates: Partial<Listing>) => Promise<void>;
+  deleteListing: (id: string) => Promise<void>;
+  incrementListingMetric: (id: string, metric: 'vues' | 'contacts' | 'demandes') => Promise<void>;
+
+  // Bookings
+  bookings: Booking[];
+  createBooking: (bookingData: Omit<Booking, 'id' | 'dateCreation' | 'statut'>) => Promise<void>;
+  updateBookingStatus: (bookingId: string, status: 'acceptee' | 'refusee') => Promise<void>;
+
+  // Favorites
+  favorites: string[]; // listing IDs
+  toggleFavorite: (listingId: string) => Promise<void>;
+
+  // Search Alerts
+  alerts: SearchAlert[];
+  createAlert: (alert: Omit<SearchAlert, 'id' | 'dateCreation' | 'userId'>) => Promise<void>;
+  deleteAlert: (id: string) => Promise<void>;
+
+  // Recent Searches
+  recentSearches: RecentSearch[];
+  recordSearch: (label: string, commune?: string, categorie?: CategoryType | 'toutes') => void;
+  removeSearch: (id: string) => void;
+  clearAllSearches: () => void;
+
+  // Reports
+  reports: Report[];
+  submitReport: (listingId: string, listingTitre: string, motif: string) => Promise<void>;
+  resolveReport: (reportId: string) => Promise<void>;
+
+  // Admin Actions
+  validateListing: (listingId: string, approve: boolean, motifRejet?: string) => Promise<void>;
+  verifyOwnerIdentity: (userId: string, approve: boolean) => Promise<void>;
+  toggleUserBlock: (userId: string) => Promise<void>;
+  allUsers: UserProfile[];
+
+  // Messages
+  messages: Message[];
+  sendMessage: (receiverId: string, text: string, listingId?: string, listingTitre?: string) => Promise<void>;
+
+  // Toast notifications
+  toast: { message: string; type: 'success' | 'error' | 'info' } | null;
+  showToast: (message: string, type?: 'success' | 'error' | 'info') => void;
+}
+
+const defaultFilters: FilterCriteria = {
+  categorie: 'toutes',
+  commune: 'Toutes',
+  budgetMin: '',
+  budgetMax: '',
+  pieces: 'toutes',
+  equipements: [],
+  tri: 'recent',
+  maxDistanceKm: 25,
+};
+
+const AppContext = createContext<AppContextType | undefined>(undefined);
+
+export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => {
+    const saved = localStorage.getItem('ivoire_user');
+    return saved ? JSON.parse(saved) : null;
+  });
+  const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
+  const [isAuthLoading, setIsAuthLoading] = useState(true);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [showRoleModal, setShowRoleModal] = useState(false);
+
+  const [activeTab, setActiveTab] = useState<'accueil' | 'favoris' | 'publier' | 'mon_espace'>('accueil');
+  const [selectedListing, setSelectedListing] = useState<Listing | null>(null);
+  const [isFiltersOpen, setIsFiltersOpen] = useState(false);
+  const [isMapView, setIsMapView] = useState(false);
+  const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
+
+  const [listings, setListings] = useState<Listing[]>(() => {
+    const saved = localStorage.getItem('ivoire_listings');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      // Migrate any stale photo URLs
+      return parsed.map((item: Listing) => ({
+        ...item,
+        photos: item.photos.map((p) =>
+          p.includes('photo-1502005229762-ae1b460020e2')
+            ? 'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?auto=format&fit=crop&w=1200&q=80'
+            : p
+        ),
+      }));
+    }
+    return DEMO_LISTINGS;
+  });
+
+  const [filters, setFilters] = useState<FilterCriteria>(defaultFilters);
+
+  const [favorites, setFavorites] = useState<string[]>(() => {
+    const saved = localStorage.getItem('ivoire_favorites');
+    return saved ? JSON.parse(saved) : ['demo-1', 'demo-6'];
+  });
+
+  const [bookings, setBookings] = useState<Booking[]>(() => {
+    const saved = localStorage.getItem('ivoire_bookings');
+    return saved ? JSON.parse(saved) : [
+      {
+        id: 'booking-demo-1',
+        listingId: 'demo-6',
+        listingTitre: 'Appartement meublé design avec vue panoramique au Plateau',
+        listingPhoto: 'https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?auto=format&fit=crop&w=600&q=80',
+        listingCommune: 'Plateau',
+        clientId: 'client-touriste',
+        clientNom: 'Christian Kouassi',
+        clientTelephone: '+225 07 12 34 56 78',
+        ownerId: 'owner-residence',
+        dateArrivee: '2026-11-05',
+        dateDepart: '2026-11-08',
+        nuits: 3,
+        montantTotal: 135000,
+        statut: 'acceptee',
+        dateCreation: '2026-10-20T10:00:00.000Z',
+      },
+    ];
+  });
+
+  const [alerts, setAlerts] = useState<SearchAlert[]>(() => {
+    const saved = localStorage.getItem('ivoire_alerts');
+    return saved ? JSON.parse(saved) : [
+      {
+        id: 'alert-1',
+        userId: 'client-touriste',
+        categorie: 'location',
+        commune: 'Cocody',
+        budgetMax: 200000,
+        dateCreation: '2026-10-18T10:00:00.000Z',
+      },
+    ];
+  });
+
+  const [recentSearches, setRecentSearches] = useState<RecentSearch[]>(() => {
+    const saved = localStorage.getItem('ivoire_recent_searches');
+    return saved ? JSON.parse(saved) : DEFAULT_RECENT_SEARCHES;
+  });
+
+  const [reports, setReports] = useState<Report[]>(() => {
+    const saved = localStorage.getItem('ivoire_reports');
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  const [allUsers, setAllUsers] = useState<UserProfile[]>(() => {
+    const saved = localStorage.getItem('ivoire_all_users');
+    return saved ? JSON.parse(saved) : [
+      {
+        id: 'owner-koffi',
+        nom: 'Koffi & Frères Immobilier',
+        telephone: '+225 07 08 12 34 56',
+        role: 'proprietaire',
+        verifie: true,
+        pieceIdentiteStatut: 'validee',
+        dateCreation: '2026-10-01T08:00:00.000Z',
+      },
+      {
+        id: 'owner-aminata',
+        nom: 'Agence Aminata Prestige',
+        telephone: '+225 05 45 78 90 12',
+        role: 'proprietaire',
+        verifie: true,
+        pieceIdentiteStatut: 'validee',
+        dateCreation: '2026-10-02T09:30:00.000Z',
+      },
+      {
+        id: 'owner-yao',
+        nom: 'M. Yao Kouamé',
+        telephone: '+225 01 02 03 04 05',
+        role: 'proprietaire',
+        verifie: false,
+        pieceIdentiteStatut: 'en_attente',
+        pieceIdentiteUrl: 'https://images.unsplash.com/photo-1589829545856-d10d557cf95f?auto=format&fit=crop&w=600&q=80',
+        pieceIdentiteType: 'CNI Ivoirienne',
+        dateCreation: '2026-10-14T11:00:00.000Z',
+      },
+    ];
+  });
+
+  const [messages, setMessages] = useState<Message[]>(() => {
+    const saved = localStorage.getItem('ivoire_messages');
+    return saved ? JSON.parse(saved) : [
+      {
+        id: 'msg-1',
+        listingId: 'demo-1',
+        listingTitre: 'Coquet Studio moderne à Cocody Angré',
+        senderId: 'owner-koffi',
+        senderNom: 'Koffi & Frères Immobilier',
+        receiverId: 'client-touriste',
+        texte: 'Bonjour M. Touriste, le studio à Angré est bien disponible pour visite ce samedi dès 10h.',
+        dateCreation: '2026-10-21T14:30:00.000Z',
+      },
+    ];
+  });
+
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
+
+  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => {
+      setToast(null);
+    }, 4000);
+  };
+
+  // Sync state to local storage for instant responsiveness & offline support
+  useEffect(() => {
+    localStorage.setItem('ivoire_listings', JSON.stringify(listings));
+  }, [listings]);
+
+  useEffect(() => {
+    localStorage.setItem('ivoire_favorites', JSON.stringify(favorites));
+  }, [favorites]);
+
+  useEffect(() => {
+    localStorage.setItem('ivoire_bookings', JSON.stringify(bookings));
+  }, [bookings]);
+
+  useEffect(() => {
+    localStorage.setItem('ivoire_alerts', JSON.stringify(alerts));
+  }, [alerts]);
+
+  useEffect(() => {
+    localStorage.setItem('ivoire_recent_searches', JSON.stringify(recentSearches));
+  }, [recentSearches]);
+
+  useEffect(() => {
+    localStorage.setItem('ivoire_reports', JSON.stringify(reports));
+  }, [reports]);
+
+  useEffect(() => {
+    localStorage.setItem('ivoire_messages', JSON.stringify(messages));
+  }, [messages]);
+
+  useEffect(() => {
+    localStorage.setItem('ivoire_all_users', JSON.stringify(allUsers));
+  }, [allUsers]);
+
+  useEffect(() => {
+    if (currentUser) {
+      localStorage.setItem('ivoire_user', JSON.stringify(currentUser));
+    } else {
+      localStorage.removeItem('ivoire_user');
+    }
+  }, [currentUser]);
+
+  // Firebase auth state listener & firestore connection check
+  useEffect(() => {
+    testFirestoreConnection();
+
+    const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
+      setFirebaseUser(fbUser);
+      if (fbUser) {
+        // Fetch or create user profile in Firestore
+        try {
+          const userRef = doc(db, 'users', fbUser.uid);
+          const snap = await getDoc(userRef);
+          if (snap.exists()) {
+            const data = snap.data() as UserProfile;
+            setCurrentUser(data);
+          } else {
+            // Check if admin email
+            const isAdminEmail = fbUser.email === 'toyogotoure8@gmail.com';
+            const newProfile: UserProfile = {
+              id: fbUser.uid,
+              nom: fbUser.displayName || 'Utilisateur',
+              telephone: fbUser.phoneNumber || '+225 07 00 00 00 00',
+              email: fbUser.email || undefined,
+              role: isAdminEmail ? 'admin' : 'client',
+              verifie: isAdminEmail,
+              dateCreation: new Date().toISOString(),
+            };
+            await setDoc(userRef, newProfile);
+            setCurrentUser(newProfile);
+            if (!isAdminEmail) {
+              setShowRoleModal(true);
+            }
+          }
+        } catch (e) {
+          console.warn('Firestore user fetch note:', e);
+          if (!currentUser) {
+            const fallbackProfile: UserProfile = {
+              id: fbUser.uid,
+              nom: fbUser.displayName || 'Utilisateur',
+              telephone: fbUser.phoneNumber || '+225 07 00 00 00 00',
+              email: fbUser.email || undefined,
+              role: fbUser.email === 'toyogotoure8@gmail.com' ? 'admin' : 'client',
+              verifie: fbUser.email === 'toyogotoure8@gmail.com',
+              dateCreation: new Date().toISOString(),
+            };
+            setCurrentUser(fallbackProfile);
+          }
+        }
+      }
+      setIsAuthLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // Request user geolocation for "Autour de moi"
+  const requestUserLocation = () => {
+    if (!navigator.geolocation) {
+      showToast('La géolocalisation n\'est pas supportée par votre navigateur', 'error');
+      return;
+    }
+
+    showToast('Recherche de votre position GPS...', 'info');
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        setUserCoords(coords);
+        setFilters((prev) => ({ ...prev, userLocation: coords }));
+        showToast('Position GPS détectée avec succès !', 'success');
+      },
+      (err) => {
+        console.warn('Geolocation error:', err);
+        // Default to Plateau / Abidjan center for demo convenience
+        const fallbackCoords = { lat: 5.3235, lng: -4.0197 };
+        setUserCoords(fallbackCoords);
+        setFilters((prev) => ({ ...prev, userLocation: fallbackCoords }));
+        showToast('Position par défaut appliquée (Abidjan Centre)', 'info');
+      },
+      { timeout: 10000, enableHighAccuracy: true }
+    );
+  };
+
+  const loginWithGoogle = async () => {
+    try {
+      setIsAuthLoading(true);
+      const res = await signInWithPopup(auth, googleProvider);
+      showToast(`Bienvenue, ${res.user.displayName || 'cher utilisateur'} !`, 'success');
+    } catch (err: any) {
+      console.error('Google login error:', err);
+      showToast('Erreur de connexion Google. Veuillez réessayer.', 'error');
+    } finally {
+      setIsAuthLoading(false);
+      setShowAuthModal(false);
+    }
+  };
+
+  const loginWithPhone = async (phone: string, chosenRole: UserRole = 'client', customName?: string) => {
+    try {
+      setIsAuthLoading(true);
+      const uid = 'phone-' + phone.replace(/[^0-9]/g, '');
+      const profile: UserProfile = {
+        id: uid,
+        nom: customName?.trim() || `Utilisateur CI (${phone.slice(-4)})`,
+        telephone: phone.startsWith('+225') ? phone : `+225 ${phone}`,
+        role: chosenRole,
+        verifie: false,
+        dateCreation: new Date().toISOString(),
+      };
+
+      try {
+        await setDoc(doc(db, 'users', uid), profile);
+      } catch (e) {
+        console.warn('Firestore offline fallback for user save:', e);
+      }
+
+      setCurrentUser(profile);
+      showToast('Connexion réussie par numéro de téléphone !', 'success');
+      setShowAuthModal(false);
+    } catch (err) {
+      console.error(err);
+      showToast('Erreur lors de la validation du code SMS', 'error');
+    } finally {
+      setIsAuthLoading(false);
+    }
+  };
+
+  const logout = async () => {
+    try {
+      await fbSignOut(auth);
+    } catch (e) {
+      console.warn(e);
+    }
+    setCurrentUser(null);
+    showToast('Vous avez été déconnecté.', 'info');
+  };
+
+  const switchRole = async (newRole: UserRole) => {
+    if (!currentUser) return;
+    const updated = { ...currentUser, role: newRole };
+    setCurrentUser(updated);
+    try {
+      await updateDoc(doc(db, 'users', currentUser.id), { role: newRole });
+    } catch (e) {
+      console.warn('Firestore update role fallback:', e);
+    }
+    showToast(`Mode activé : ${newRole === 'client' ? '« Je cherche » (Client)' : newRole === 'proprietaire' ? '« Je publie » (Propriétaire/Hôtelier)' : 'Administrateur'}`, 'success');
+    setShowRoleModal(false);
+  };
+
+  const updateUserVerification = async (idCardUrl: string, type: string) => {
+    if (!currentUser) return;
+    const updated: UserProfile = {
+      ...currentUser,
+      pieceIdentiteUrl: idCardUrl,
+      pieceIdentiteStatut: 'en_attente',
+      pieceIdentiteType: type,
+    };
+    setCurrentUser(updated);
+
+    // Update in allUsers list for admin
+    setAllUsers((prev) => {
+      const idx = prev.findIndex((u) => u.id === currentUser.id);
+      if (idx >= 0) {
+        const copy = [...prev];
+        copy[idx] = updated;
+        return copy;
+      }
+      return [...prev, updated];
+    });
+
+    try {
+      await updateDoc(doc(db, 'users', currentUser.id), {
+        pieceIdentiteUrl: idCardUrl,
+        pieceIdentiteStatut: 'en_attente',
+        pieceIdentiteType: type,
+      });
+    } catch (e) {
+      console.warn(e);
+    }
+    showToast('Pièce d\'identité envoyée. En attente de validation par l\'administration.', 'info');
+  };
+
+  const addListing = async (listingData: Omit<Listing, 'id' | 'dateCreation' | 'vues' | 'contacts' | 'demandes'>): Promise<string> => {
+    const newId = 'listing-' + Date.now();
+    const newListing: Listing = {
+      ...listingData,
+      id: newId,
+      vues: 0,
+      contacts: 0,
+      demandes: 0,
+      statut: 'en_attente', // Needs admin approval as requested
+      dateCreation: new Date().toISOString(),
+    };
+
+    setListings((prev) => [newListing, ...prev]);
+
+    try {
+      await setDoc(doc(db, 'listings', newId), newListing);
+    } catch (e) {
+      console.warn('Firestore sync note:', e);
+    }
+
+    showToast('Annonce soumise avec succès ! Elle sera examinée par un modérateur.', 'success');
+    return newId;
+  };
+
+  const updateListing = async (id: string, updates: Partial<Listing>) => {
+    setListings((prev) => prev.map((item) => (item.id === id ? { ...item, ...updates } : item)));
+    if (selectedListing && selectedListing.id === id) {
+      setSelectedListing((prev) => (prev ? { ...prev, ...updates } : null));
+    }
+    try {
+      await updateDoc(doc(db, 'listings', id), updates);
+    } catch (e) {
+      console.warn('Update listing warning:', e);
+    }
+    showToast('Annonce mise à jour avec succès.', 'success');
+  };
+
+  const deleteListing = async (id: string) => {
+    setListings((prev) => prev.filter((item) => item.id !== id));
+    if (selectedListing && selectedListing.id === id) {
+      setSelectedListing(null);
+    }
+    try {
+      await deleteDoc(doc(db, 'listings', id));
+    } catch (e) {
+      console.warn('Delete listing warning:', e);
+    }
+    showToast('Annonce supprimée.', 'info');
+  };
+
+  const incrementListingMetric = async (id: string, metric: 'vues' | 'contacts' | 'demandes') => {
+    setListings((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, [metric]: (item[metric] || 0) + 1 } : item))
+    );
+    try {
+      const listing = listings.find((l) => l.id === id);
+      if (listing) {
+        await updateDoc(doc(db, 'listings', id), {
+          [metric]: (listing[metric] || 0) + 1,
+        });
+      }
+    } catch (e) {
+      console.warn(e);
+    }
+  };
+
+  const toggleFavorite = async (listingId: string) => {
+    setFavorites((prev) => {
+      const exists = prev.includes(listingId);
+      if (exists) {
+        showToast('Annonce retirée de vos favoris', 'info');
+        return prev.filter((id) => id !== listingId);
+      } else {
+        showToast('Annonce ajoutée à vos favoris ❤️', 'success');
+        return [...prev, listingId];
+      }
+    });
+  };
+
+  const createBooking = async (bookingData: Omit<Booking, 'id' | 'dateCreation' | 'statut'>) => {
+    const id = 'booking-' + Date.now();
+    const newBooking: Booking = {
+      ...bookingData,
+      id,
+      statut: 'demandee',
+      dateCreation: new Date().toISOString(),
+    };
+
+    setBookings((prev) => [newBooking, ...prev]);
+    incrementListingMetric(bookingData.listingId, 'demandes');
+
+    try {
+      await setDoc(doc(db, 'bookings', id), newBooking);
+    } catch (e) {
+      console.warn('Booking create warning:', e);
+    }
+
+    showToast('Demande de réservation transmise au propriétaire !', 'success');
+  };
+
+  const updateBookingStatus = async (bookingId: string, status: 'acceptee' | 'refusee') => {
+    setBookings((prev) =>
+      prev.map((b) => (b.id === bookingId ? { ...b, statut: status } : b))
+    );
+    try {
+      await updateDoc(doc(db, 'bookings', bookingId), { statut: status });
+    } catch (e) {
+      console.warn(e);
+    }
+    showToast(
+      status === 'acceptee'
+        ? 'Réservation acceptée ! Le client a été notifié.'
+        : 'Réservation refusée.',
+      status === 'acceptee' ? 'success' : 'info'
+    );
+  };
+
+  const createAlert = async (alertData: Omit<SearchAlert, 'id' | 'dateCreation' | 'userId'>) => {
+    const id = 'alert-' + Date.now();
+    const newAlert: SearchAlert = {
+      ...alertData,
+      id,
+      userId: currentUser?.id || 'guest',
+      dateCreation: new Date().toISOString(),
+    };
+    setAlerts((prev) => [newAlert, ...prev]);
+    showToast('Alerte de recherche enregistrée ! Vous serez notifié des nouvelles annonces.', 'success');
+  };
+
+  const deleteAlert = async (id: string) => {
+    setAlerts((prev) => prev.filter((a) => a.id !== id));
+    showToast('Alerte supprimée.', 'info');
+  };
+
+  const recordSearch = (label: string, commune?: string, categorie?: CategoryType | 'toutes') => {
+    setRecentSearches((prev) => addRecentSearch(prev, { label, commune, categorie }));
+  };
+
+  const removeSearch = (id: string) => {
+    setRecentSearches((prev) => deleteRecentSearch(prev, id));
+  };
+
+  const clearAllSearches = () => {
+    setRecentSearches([]);
+  };
+
+  const submitReport = async (listingId: string, listingTitre: string, motif: string) => {
+    const newReport: Report = {
+      id: 'report-' + Date.now(),
+      listingId,
+      listingTitre,
+      userId: currentUser?.id || 'guest',
+      motif,
+      statut: 'en_attente',
+      dateCreation: new Date().toISOString(),
+    };
+    setReports((prev) => [newReport, ...prev]);
+    try {
+      await setDoc(doc(db, 'reports', newReport.id), newReport);
+    } catch (e) {
+      console.warn(e);
+    }
+    showToast('Signalement enregistré. Merci de veiller à la sécurité de la communauté.', 'info');
+  };
+
+  const resolveReport = async (reportId: string) => {
+    setReports((prev) => prev.map((r) => (r.id === reportId ? { ...r, statut: 'traite' } : r)));
+    showToast('Signalement marqué comme traité.', 'success');
+  };
+
+  const validateListing = async (listingId: string, approve: boolean, motifRejet?: string) => {
+    const updates: Partial<Listing> = {
+      statut: approve ? 'publiee' : 'rejetee',
+      motifRejet: approve ? undefined : motifRejet || 'Non conforme aux règles de diffusion',
+    };
+    await updateListing(listingId, updates);
+    showToast(
+      approve ? 'Annonce validée et publiée !' : 'Annonce rejetée.',
+      approve ? 'success' : 'info'
+    );
+  };
+
+  const verifyOwnerIdentity = async (userId: string, approve: boolean) => {
+    setAllUsers((prev) =>
+      prev.map((u) =>
+        u.id === userId
+          ? {
+              ...u,
+              verifie: approve,
+              pieceIdentiteStatut: approve ? 'validee' : 'rejetee',
+            }
+          : u
+      )
+    );
+
+    // Also update all listings owned by this user
+    setListings((prev) =>
+      prev.map((l) => (l.ownerId === userId ? { ...l, ownerVerifie: approve } : l))
+    );
+
+    if (currentUser && currentUser.id === userId) {
+      setCurrentUser((prev) =>
+        prev
+          ? {
+              ...prev,
+              verifie: approve,
+              pieceIdentiteStatut: approve ? 'validee' : 'rejetee',
+            }
+          : null
+      );
+    }
+
+    try {
+      await updateDoc(doc(db, 'users', userId), {
+        verifie: approve,
+        pieceIdentiteStatut: approve ? 'validee' : 'rejetee',
+      });
+    } catch (e) {
+      console.warn(e);
+    }
+
+    showToast(
+      approve ? 'Badge « Vérifié » attribué avec succès !' : 'Demande d\'identité rejetée.',
+      approve ? 'success' : 'info'
+    );
+  };
+
+  const toggleUserBlock = async (userId: string) => {
+    setAllUsers((prev) =>
+      prev.map((u) => (u.id === userId ? { ...u, bloque: !u.bloque } : u))
+    );
+    showToast('Statut du compte mis à jour.', 'info');
+  };
+
+  const sendMessage = async (receiverId: string, texte: string, listingId?: string, listingTitre?: string) => {
+    const newMsg: Message = {
+      id: 'msg-' + Date.now(),
+      listingId,
+      listingTitre,
+      senderId: currentUser?.id || 'guest',
+      senderNom: currentUser?.nom || 'Client IvoireImmo',
+      receiverId,
+      texte,
+      dateCreation: new Date().toISOString(),
+    };
+    setMessages((prev) => [...prev, newMsg]);
+    showToast('Message envoyé !', 'success');
+  };
+
+  const resetFilters = () => {
+    setFilters(defaultFilters);
+  };
+
+  // Filter listings based on criteria
+  const filteredListings = listings.filter((item) => {
+    // Only published listings for regular clients, owners see their own, admins see all
+    if (item.statut !== 'publiee') {
+      const isOwner = currentUser && item.ownerId === currentUser.id;
+      const isAdmin = currentUser && currentUser.role === 'admin';
+      if (!isOwner && !isAdmin) return false;
+    }
+
+    // Category
+    if (filters.categorie !== 'toutes' && item.categorie !== filters.categorie) {
+      return false;
+    }
+
+    // Commune
+    if (filters.commune !== 'Toutes' && item.commune.toLowerCase() !== filters.commune.toLowerCase()) {
+      return false;
+    }
+
+    // Budget Min
+    if (filters.budgetMin !== '' && item.prix < Number(filters.budgetMin)) {
+      return false;
+    }
+
+    // Budget Max
+    if (filters.budgetMax !== '' && item.prix > Number(filters.budgetMax)) {
+      return false;
+    }
+
+    // Pieces
+    if (filters.pieces !== 'toutes' && item.pieces !== Number(filters.pieces)) {
+      return false;
+    }
+
+    // Equipments (must contain all selected equipments)
+    if (filters.equipements.length > 0) {
+      const hasAllEquipments = filters.equipements.every((eq) => item.equipements.includes(eq));
+      if (!hasAllEquipments) return false;
+    }
+
+    // Geolocation radius filter
+    if (filters.userLocation && item.position && filters.maxDistanceKm) {
+      const dist = calculateDistanceKm(
+        filters.userLocation.lat,
+        filters.userLocation.lng,
+        item.position.lat,
+        item.position.lng
+      );
+      if (dist > filters.maxDistanceKm) {
+        return false;
+      }
+    }
+
+    return true;
+  }).sort((a, b) => {
+    if (filters.tri === 'prix_croissant') {
+      return a.prix - b.prix;
+    }
+    if (filters.tri === 'prix_decroissant') {
+      return b.prix - a.prix;
+    }
+    // Default: recent
+    return new Date(b.dateCreation).getTime() - new Date(a.dateCreation).getTime();
+  });
+
+  return (
+    <AppContext.Provider
+      value={{
+        currentUser,
+        firebaseUser,
+        isAuthLoading,
+        loginWithGoogle,
+        loginWithPhone,
+        logout,
+        switchRole,
+        showAuthModal,
+        setShowAuthModal,
+        showRoleModal,
+        setShowRoleModal,
+        updateUserVerification,
+
+        activeTab,
+        setActiveTab,
+        selectedListing,
+        setSelectedListing,
+        isFiltersOpen,
+        setIsFiltersOpen,
+        isMapView,
+        setIsMapView,
+        userCoords,
+        requestUserLocation,
+
+        listings,
+        filteredListings,
+        filters,
+        setFilters,
+        resetFilters,
+        addListing,
+        updateListing,
+        deleteListing,
+        incrementListingMetric,
+
+        bookings,
+        createBooking,
+        updateBookingStatus,
+
+        favorites,
+        toggleFavorite,
+
+        alerts,
+        createAlert,
+        deleteAlert,
+
+        recentSearches,
+        recordSearch,
+        removeSearch,
+        clearAllSearches,
+
+        reports,
+        submitReport,
+        resolveReport,
+
+        validateListing,
+        verifyOwnerIdentity,
+        toggleUserBlock,
+        allUsers,
+
+        messages,
+        sendMessage,
+
+        toast,
+        showToast,
+      }}
+    >
+      {children}
+    </AppContext.Provider>
+  );
+};
+
+export const useApp = () => {
+  const context = useContext(AppContext);
+  if (!context) {
+    throw new Error('useApp must be used within an AppProvider');
+  }
+  return context;
+};

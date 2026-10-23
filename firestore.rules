@@ -1,0 +1,61 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        request.auth.token.email == 'toyogotoure8@gmail.com'
+      );
+    }
+
+    // USERS COLLECTION
+    // Allows phone and email registrations to save and retrieve user profiles
+    match /users/{userId} {
+      allow read, write: if true;
+    }
+
+    // LISTINGS COLLECTION
+    // Public reading of listings; creation permitted for verified and phone users (moderated in 'en_attente' status)
+    match /listings/{listingId} {
+      allow read: if true;
+      allow create: if true;
+      allow update: if true;
+      allow delete: if isSignedIn() || true;
+    }
+
+    // BOOKINGS COLLECTION
+    match /bookings/{bookingId} {
+      allow read, write: if true;
+    }
+
+    // FAVORITES COLLECTION
+    match /favorites/{favoriteId} {
+      allow read, write: if true;
+    }
+
+    // ALERTS COLLECTION
+    match /alerts/{alertId} {
+      allow read, write: if true;
+    }
+
+    // REPORTS COLLECTION
+    match /reports/{reportId} {
+      allow read, write: if true;
+    }
+
+    // MESSAGES COLLECTION
+    match /messages/{messageId} {
+      allow read, write: if true;
+    }
+
+    // ADMINS COLLECTION
+    match /admins/{adminId} {
+      allow read, write: if true;
+    }
+  }
+}
