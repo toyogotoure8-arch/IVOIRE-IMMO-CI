@@ -13,6 +13,7 @@ import {
   Wifi,
   Eye,
   Navigation,
+  Building2,
 } from 'lucide-react';
 
 interface Props {
@@ -56,41 +57,46 @@ export const ListingCard: React.FC<Props> = ({ listing }) => {
     setSelectedListing(listing);
   };
 
+  const hasPhoto = listing.photos && listing.photos.length > 0 && listing.photos[0] && listing.photos[0].trim() !== '';
+
   return (
     <div
       onClick={handleCardClick}
       className="group relative bg-white dark:bg-[#16261c] rounded-2xl overflow-hidden border border-gray-200/80 dark:border-gray-800 shadow-sm hover:shadow-md transition-all duration-200 cursor-pointer flex flex-col active:scale-[0.99]"
     >
       {/* Photo Container */}
-      <div className="relative aspect-4/3 w-full overflow-hidden bg-gray-200 dark:bg-gray-800">
-        {!imgLoaded && (
-          <div className="absolute inset-0 bg-gray-300 dark:bg-gray-700 animate-pulse z-0" />
+      <div className="relative aspect-4/3 w-full overflow-hidden bg-gray-100 dark:bg-gray-800/80 flex items-center justify-center">
+        {hasPhoto ? (
+          <>
+            {!imgLoaded && (
+              <div className="absolute inset-0 bg-gray-300 dark:bg-gray-700 animate-pulse z-0" />
+            )}
+            <img
+              src={listing.photos[0]}
+              alt={listing.titre}
+              loading="lazy"
+              onLoad={() => setImgLoaded(true)}
+              onError={(e) => {
+                setImgLoaded(true);
+                (e.target as HTMLImageElement).style.display = 'none';
+              }}
+              className={`w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 relative z-1 ${
+                imgLoaded ? 'opacity-100' : 'opacity-0'
+              }`}
+            />
+          </>
+        ) : (
+          <div className="flex flex-col items-center justify-center text-gray-400 dark:text-gray-500 p-4 text-center">
+            <Building2 className="w-10 h-10 mb-1 opacity-60" />
+            <span className="text-[11px] font-medium">Aucune photo disponible</span>
+          </div>
         )}
-        <img
-          src={listing.photos[0] || 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?auto=format&fit=crop&w=600&q=80'}
-          alt={listing.titre}
-          loading="lazy"
-          onLoad={() => setImgLoaded(true)}
-          onError={(e) => {
-            setImgLoaded(true);
-            (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?auto=format&fit=crop&w=600&q=80';
-          }}
-          className={`w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 relative z-1 ${
-            imgLoaded ? 'opacity-100' : 'opacity-0'
-          }`}
-        />
-
 
         {/* Top Badges */}
-        <div className="absolute top-2.5 left-2.5 flex flex-wrap gap-1.5 items-center">
+        <div className="absolute top-2.5 left-2.5 flex flex-wrap gap-1.5 items-center z-10">
           <span className={`text-[11px] font-bold text-white px-2.5 py-0.5 rounded-full shadow-sm ${catInfo.color}`}>
             {catInfo.label}
           </span>
-          {listing.isExemple && (
-            <span className="text-[10px] font-semibold bg-black/60 backdrop-blur-md text-amber-300 px-2 py-0.5 rounded-full border border-amber-300/30">
-              Exemple
-            </span>
-          )}
           <button
             type="button"
             onClick={(e) => {
@@ -109,7 +115,7 @@ export const ListingCard: React.FC<Props> = ({ listing }) => {
         </div>
 
         {/* Top Right Actions: Favorite & Share */}
-        <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5">
+        <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5 z-10">
           <ShareButton listing={listing} variant="icon" />
           <button
             type="button"
@@ -128,17 +134,31 @@ export const ListingCard: React.FC<Props> = ({ listing }) => {
           </button>
         </div>
 
-        {/* Verified Owner Badge */}
-        {listing.ownerVerifie && (
-          <div className="absolute bottom-2.5 left-2.5 flex items-center gap-1 bg-[#0F6B3F]/90 backdrop-blur-md text-white text-[11px] font-semibold px-2 py-0.5 rounded-full shadow">
-            <ShieldCheck className="w-3.5 h-3.5 text-amber-300" />
-            <span>Propriétaire vérifié</span>
-          </div>
-        )}
+        {/* Specific Verification Badges */}
+        <div className="absolute bottom-2.5 left-2.5 flex flex-wrap gap-1.5 z-10">
+          {listing.ownerTelVerifie && (
+            <div className="flex items-center gap-1 bg-[#0F6B3F]/90 backdrop-blur-md text-white text-[10px] font-semibold px-2 py-0.5 rounded-full shadow">
+              <ShieldCheck className="w-3 h-3 text-amber-300" />
+              <span>Tél. vérifié</span>
+            </div>
+          )}
+          {listing.ownerEmailVerifie && (
+            <div className="flex items-center gap-1 bg-blue-600/90 backdrop-blur-md text-white text-[10px] font-semibold px-2 py-0.5 rounded-full shadow">
+              <ShieldCheck className="w-3 h-3 text-blue-200" />
+              <span>Email vérifié</span>
+            </div>
+          )}
+          {/* Nouveau propriétaire tag (account < 7 days) */}
+          {listing.dateCreation && (new Date().getTime() - new Date(listing.dateCreation).getTime() < 7 * 24 * 60 * 60 * 1000) && (
+            <div className="flex items-center gap-1 bg-amber-500/90 backdrop-blur-md text-white text-[10px] font-semibold px-2 py-0.5 rounded-full shadow">
+              <span>Nouveau propriétaire</span>
+            </div>
+          )}
+        </div>
 
         {/* Distance Indicator if GPS active */}
         {distanceKm !== null && (
-          <div className="absolute bottom-2.5 right-2.5 flex items-center gap-1 bg-black/70 backdrop-blur-md text-white text-[10px] font-medium px-2 py-0.5 rounded-full">
+          <div className="absolute bottom-2.5 right-2.5 flex items-center gap-1 bg-black/70 backdrop-blur-md text-white text-[10px] font-medium px-2 py-0.5 rounded-full z-10">
             <Navigation className="w-3 h-3 text-emerald-400" />
             <span>{distanceKm} km</span>
           </div>
@@ -176,16 +196,16 @@ export const ListingCard: React.FC<Props> = ({ listing }) => {
         {/* Equipments mini-bar */}
         <div className="mt-auto pt-2.5 border-t border-gray-100 dark:border-gray-800/80 flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
           <div className="flex items-center gap-2">
-            {listing.equipements.includes('eau') && (
+            {listing.equipements?.includes('eau') && (
               <span title="Eau SODECI" className="text-blue-500"><Droplets className="w-3.5 h-3.5" /></span>
             )}
-            {listing.equipements.includes('electricite') && (
+            {listing.equipements?.includes('electricite') && (
               <span title="Électricité CIE" className="text-amber-500"><Zap className="w-3.5 h-3.5" /></span>
             )}
-            {listing.equipements.includes('climatisation') && (
+            {listing.equipements?.includes('climatisation') && (
               <span title="Climatisation" className="text-teal-500"><Wind className="w-3.5 h-3.5" /></span>
             )}
-            {listing.equipements.includes('wifi') && (
+            {listing.equipements?.includes('wifi') && (
               <span title="Wi-Fi / Fibre" className="text-indigo-500"><Wifi className="w-3.5 h-3.5" /></span>
             )}
             <span className="text-[11px] font-medium text-gray-400">

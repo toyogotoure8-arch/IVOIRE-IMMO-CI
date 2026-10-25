@@ -9,23 +9,35 @@ import {
   Moon,
   ChevronDown,
   Sparkles,
+  RefreshCw,
 } from 'lucide-react';
 
 interface Props {
   onOpenAlerts: () => void;
   isDark: boolean;
   toggleDarkMode: () => void;
+  onOpenPublish?: () => void;
+  onOpenSpaceSwitcher?: () => void;
 }
 
-export const Navbar: React.FC<Props> = ({ onOpenAlerts, isDark, toggleDarkMode }) => {
+export const Navbar: React.FC<Props> = ({
+  onOpenAlerts,
+  isDark,
+  toggleDarkMode,
+  onOpenPublish,
+  onOpenSpaceSwitcher,
+}) => {
   const {
     currentUser,
     setShowAuthModal,
-    setShowRoleModal,
     alerts,
     logout,
     setActiveTab,
+    resetPortal,
+    showToast,
   } = useApp();
+
+  const activeSpace = currentUser?.espaceActif || 'chercheur';
 
   return (
     <header className="sticky top-0 z-40 bg-white/90 dark:bg-[#132219]/90 backdrop-blur-md border-b border-gray-200/80 dark:border-gray-800 transition-colors">
@@ -54,21 +66,23 @@ export const Navbar: React.FC<Props> = ({ onOpenAlerts, isDark, toggleDarkMode }
 
         {/* Center / Right controls */}
         <div className="flex items-center gap-2 sm:gap-3">
-          {/* Role badge switcher */}
-          {currentUser && (
+          {/* Persistent "Changer d'espace" selector for logged-in users with complete profile */}
+          {currentUser && currentUser.profilComplet && (
             <button
               type="button"
-              onClick={() => setShowRoleModal(true)}
-              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-600/20 text-xs font-bold text-[#0F6B3F] dark:text-[#34D399] hover:bg-emerald-100 transition-colors"
+              onClick={() => {
+                if (onOpenSpaceSwitcher) {
+                  onOpenSpaceSwitcher();
+                }
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 text-[#F28C1B] border border-amber-500/20 text-xs font-bold transition-all active:scale-95 shadow-2xs"
+              title="Basculez d'espace ou activez un nouveau statut"
             >
-              <span>
-                {currentUser.role === 'admin'
-                  ? '🛡️ Mode Admin'
-                  : currentUser.role === 'proprietaire'
-                  ? '🏡 Je publie (Bailleur)'
-                  : '🔍 Je cherche (Client)'}
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span className="hidden xs:inline">
+                {activeSpace === 'proprietaire' ? 'Changer d\'espace (Propriétaire)' : 'Changer d\'espace (Chercheur)'}
               </span>
-              <ChevronDown className="w-3 h-3 opacity-70" />
+              <span className="xs:hidden">Espace</span>
             </button>
           )}
 
@@ -109,8 +123,12 @@ export const Navbar: React.FC<Props> = ({ onOpenAlerts, isDark, toggleDarkMode }
               <span className="text-xs font-bold text-gray-800 dark:text-gray-200 max-w-[85px] truncate hidden md:inline">
                 {currentUser.nom}
               </span>
-              {currentUser.verifie && (
-                <ShieldCheck className="w-3.5 h-3.5 text-[#0F6B3F]" />
+              {(currentUser.phoneVerified || currentUser.emailVerified) && (
+                <span title={currentUser.phoneVerified && currentUser.emailVerified ? 'Compte vérifié (Tél & Email)' : currentUser.phoneVerified ? 'Téléphone vérifié' : 'E-mail vérifié'}>
+                  <ShieldCheck 
+                    className={`w-3.5 h-3.5 ${currentUser.phoneVerified && currentUser.emailVerified ? 'text-emerald-500' : currentUser.phoneVerified ? 'text-amber-500' : 'text-blue-500'}`} 
+                  />
+                </span>
               )}
             </button>
           ) : (
@@ -128,3 +146,4 @@ export const Navbar: React.FC<Props> = ({ onOpenAlerts, isDark, toggleDarkMode }
     </header>
   );
 };
+

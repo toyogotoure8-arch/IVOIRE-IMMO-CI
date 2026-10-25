@@ -18,29 +18,35 @@ service cloud.firestore {
     function isAdmin() {
       return isSignedIn() && (
         exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
-        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && getUserData().role == 'admin') ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && ('roles' in getUserData()) && ('admin' in getUserData().roles)) ||
         request.auth.token.email == 'toyogotoure8@gmail.com'
+      );
+    }
+
+    function isProprietaire() {
+      return isSignedIn() && (
+        isAdmin() ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && ('roles' in getUserData()) && ('proprietaire' in getUserData().roles))
       );
     }
 
     // USERS COLLECTION
     match /users/{userId} {
-      // Any user can read profiles (or user can read own profile)
+      // Any user can read public profile fields; owner or admin can access full profile
       allow read: if true;
-      // User can create own profile as client or proprietaire
+      
+      // User can create their unique profile (cannot add 'admin' role unless admin)
       allow create: if isOwner(userId) && 
-        (request.resource.data.verifie != true || isAdmin()) &&
-        (request.resource.data.role != 'admin' || isAdmin());
-      // User can update own profile, or admin, or update bloque status on suspension
+        (!('admin' in request.resource.data.roles) || isAdmin());
+
+      // User can update their own profile (cannot grant 'admin' or alter 'bloque' unless admin)
       allow update: if (isOwner(userId) || isAdmin() || (isSignedIn() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['bloque']))) &&
         (
           isAdmin() ||
           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['bloque']) ||
-          (
-            (!('verifie' in request.resource.data) || request.resource.data.verifie == resource.data.verifie) &&
-            (!('role' in request.resource.data) || request.resource.data.role == resource.data.role)
-          )
+          (!('admin' in request.resource.data.roles) || ('roles' in resource.data && 'admin' in resource.data.roles))
         );
+
       allow delete: if isAdmin();
     }
 
@@ -52,13 +58,13 @@ service cloud.firestore {
         resource.data.statut == 'publiee' || 
         (isSignedIn() && (resource.data.ownerId == request.auth.uid || isAdmin()));
 
-      // Create: Owner can create listing, but setting statut == 'publiee' or ownerVerifie == true requires admin
-      allow create: if isSignedIn() && 
+      // Create: Only users with 'proprietaire' or 'admin' role can create listings
+      allow create: if isSignedIn() && isProprietaire() && 
         (request.resource.data.ownerId == request.auth.uid || isAdmin()) &&
         (request.resource.data.statut != 'publiee' || isAdmin()) &&
         (request.resource.data.ownerVerifie != true || isAdmin());
 
-      // Update: Owner can update their listing, but transitioning/setting statut == 'publiee' or ownerVerifie requires admin
+      // Update: Owner can update their listing
       allow update: if (isSignedIn() && (resource.data.ownerId == request.auth.uid || isAdmin())) &&
         (
           isAdmin() ||
@@ -74,18 +80,15 @@ service cloud.firestore {
 
     // BOOKINGS COLLECTION
     match /bookings/{bookingId} {
-      // Only the client, listing owner, or admin can read bookings
       allow read: if isSignedIn() && (
         resource.data.clientId == request.auth.uid ||
         resource.data.ownerId == request.auth.uid ||
         isAdmin()
       );
-      // Client can create booking for themselves
       allow create: if isSignedIn() && (
         request.resource.data.clientId == request.auth.uid ||
         isAdmin()
       );
-      // Client, Owner or Admin can update/delete booking
       allow update, delete: if isSignedIn() && (
         resource.data.clientId == request.auth.uid ||
         resource.data.ownerId == request.auth.uid ||
@@ -95,17 +98,14 @@ service cloud.firestore {
 
     // FAVORITES COLLECTION
     match /favorites/{favoriteId} {
-      // Client can only read their own favorites
       allow read: if isSignedIn() && (
         resource.data.userId == request.auth.uid ||
         isAdmin()
       );
-      // Client can create favorite for themselves
       allow create: if isSignedIn() && (
         request.resource.data.userId == request.auth.uid ||
         isAdmin()
       );
-      // Client can update or delete their favorite
       allow update, delete: if isSignedIn() && (
         resource.data.userId == request.auth.uid ||
         isAdmin()
@@ -114,17 +114,14 @@ service cloud.firestore {
 
     // ALERTS COLLECTION
     match /alerts/{alertId} {
-      // Client can only read their own search alerts
       allow read: if isSignedIn() && (
         resource.data.userId == request.auth.uid ||
         isAdmin()
       );
-      // Client can create alert for themselves
       allow create: if isSignedIn() && (
         request.resource.data.userId == request.auth.uid ||
         isAdmin()
       );
-      // Client can update or delete their alert
       allow update, delete: if isSignedIn() && (
         resource.data.userId == request.auth.uid ||
         isAdmin()

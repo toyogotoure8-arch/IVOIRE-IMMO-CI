@@ -7,7 +7,7 @@ import { Heart, Search } from 'lucide-react';
 export const FavoritesView: React.FC = () => {
   const { listings, favorites, setActiveTab, isLoadingListings } = useApp();
 
-  const favoriteListings = listings.filter((l) => favorites.includes(l.id));
+  const favoriteListings = listings.filter((l) => favorites.includes(l.id) && l.statut === 'publiee');
 
   return (
     <div className="space-y-4">

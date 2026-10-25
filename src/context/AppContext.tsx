@@ -10,14 +10,28 @@ import {
   CategoryType,
   FilterCriteria,
   UserRole,
+  AppSpace,
+  DonneesChercheur,
+  DonneesProprietaire,
 } from '../types';
-import { DEMO_LISTINGS, TOUTES_LOCALITES, COORDONNEES_LOCALITES } from '../constants/ciData';
+import { TOUTES_LOCALITES, COORDONNEES_LOCALITES } from '../constants/ciData';
 
 import { calculateDistanceKm } from '../utils/calculations';
 import { RecentSearch, DEFAULT_RECENT_SEARCHES, addRecentSearch, deleteRecentSearch } from '../utils/recentSearches';
-import { db, auth, googleProvider, handleFirestoreError, OperationType, testFirestoreConnection } from '../services/firebase';
-import { doc, setDoc, getDoc, collection, getDocs, updateDoc, deleteDoc } from 'firebase/firestore';
-import { signInWithPopup, signOut as fbSignOut, onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
+import { db, auth, googleProvider, handleFirestoreError, OperationType, testFirestoreConnection, getAuthErrorMessage } from '../services/firebase';
+import { doc, setDoc, getDoc, collection, getDocs, updateDoc, deleteDoc, increment, writeBatch } from 'firebase/firestore';
+import {
+  signInWithPopup,
+  signOut as fbSignOut,
+  onAuthStateChanged,
+  User as FirebaseUser,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  sendPasswordResetEmail,
+  sendEmailVerification,
+  linkWithCredential,
+  EmailAuthProvider,
+} from 'firebase/auth';
 
 interface AppContextType {
   // Auth & Profile
@@ -26,6 +40,11 @@ interface AppContextType {
   isAuthLoading: boolean;
   loginWithGoogle: () => Promise<void>;
   loginWithPhone: (phone: string, role?: UserRole, customName?: string) => Promise<void>;
+  loginWithEmail: (email: string, pass: string) => Promise<void>;
+  registerWithEmail: (email: string, pass: string, name?: string, phone?: string) => Promise<void>;
+  sendPasswordReset: (email: string) => Promise<void>;
+  resendVerificationEmail: () => Promise<void>;
+  linkEmailCredential: (email: string, pass: string) => Promise<void>;
   logout: () => Promise<void>;
   switchRole: (role: UserRole) => Promise<void>;
   showAuthModal: boolean;
@@ -33,10 +52,26 @@ interface AppContextType {
   showRoleModal: boolean;
   setShowRoleModal: (show: boolean) => void;
   updateUserVerification: (idCardUrl: string, type: string) => Promise<void>;
+  registerSingleAccount: (data: {
+    nom: string;
+    prenoms?: string;
+    telephone: string;
+    commune: string;
+    email?: string;
+    initialSpace: AppSpace;
+    donneesChercheur?: DonneesChercheur;
+    donneesProprietaire?: DonneesProprietaire;
+  }) => Promise<void>;
+  addRoleToAccount: (data: {
+    newSpaceRole: AppSpace;
+    donneesChercheur?: DonneesChercheur;
+    donneesProprietaire?: DonneesProprietaire;
+  }) => Promise<void>;
+  switchActiveSpace: (space: AppSpace) => Promise<void>;
 
   // Navigation
-  activeTab: 'accueil' | 'favoris' | 'publier' | 'mon_espace';
-  setActiveTab: (tab: 'accueil' | 'favoris' | 'publier' | 'mon_espace') => void;
+  activeTab: 'accueil' | 'favoris' | 'publier' | 'mon_espace' | 'demandes' | 'mes_annonces' | 'demandes_recues';
+  setActiveTab: (tab: 'accueil' | 'favoris' | 'publier' | 'mon_espace' | 'demandes' | 'mes_annonces' | 'demandes_recues') => void;
   selectedListing: Listing | null;
   setSelectedListing: (listing: Listing | null) => void;
   isFiltersOpen: boolean;
@@ -48,6 +83,11 @@ interface AppContextType {
   locationError: string | null;
   requestUserLocation: () => Promise<void>;
 
+  // Portal Gateway Space ('chercheur' | 'proprietaire' | null)
+  userPortal: 'chercheur' | 'proprietaire' | null;
+  setUserPortal: (space: 'chercheur' | 'proprietaire' | null) => void;
+  selectPortal: (space: 'chercheur' | 'proprietaire') => void;
+  resetPortal: () => void;
 
   // Listings & Filtering
   listings: Listing[];
@@ -98,6 +138,8 @@ interface AppContextType {
   validateListing: (listingId: string, approve: boolean, motifRejet?: string) => Promise<void>;
   verifyOwnerIdentity: (userId: string, approve: boolean) => Promise<void>;
   toggleUserBlock: (userId: string) => Promise<void>;
+  deleteDemoListings: () => Promise<void>;
+  contestSuspension: (listingId: string, motif: string) => Promise<void>;
   allUsers: UserProfile[];
 
   // Messages
@@ -114,6 +156,13 @@ interface AppContextType {
   clearCompare: () => void;
   isCompareModalOpen: boolean;
   setIsCompareModalOpen: (open: boolean) => void;
+
+  // Recently Viewed (up to 5 listings stored in localStorage)
+  recentlyViewedIds: string[];
+  recentlyViewedListings: Listing[];
+  addToRecentlyViewed: (listingId: string) => void;
+  removeFromRecentlyViewed: (listingId: string) => void;
+  clearRecentlyViewed: () => void;
 }
 
 const defaultFilters: FilterCriteria = {
@@ -139,8 +188,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showRoleModal, setShowRoleModal] = useState(false);
 
-  const [activeTab, setActiveTab] = useState<'accueil' | 'favoris' | 'publier' | 'mon_espace'>('accueil');
-  const [selectedListing, setSelectedListing] = useState<Listing | null>(null);
+  const [activeTab, setActiveTab] = useState<'accueil' | 'favoris' | 'publier' | 'mon_espace' | 'demandes' | 'mes_annonces' | 'demandes_recues'>('accueil');
+  const [selectedListing, _setSelectedListing] = useState<Listing | null>(null);
   const [isFiltersOpen, setIsFiltersOpen] = useState(false);
   const [isMapView, setIsMapView] = useState(false);
   const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(() => {
@@ -167,22 +216,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         ),
       }));
     }
-    return DEMO_LISTINGS;
+    return [];
   });
 
   const refreshListings = async () => {
     setIsLoadingListings(true);
     try {
       const snap = await getDocs(collection(db, 'listings'));
-      if (!snap.empty) {
-        const fetched: Listing[] = [];
-        snap.forEach((docSnap) => {
-          fetched.push(docSnap.data() as Listing);
-        });
-        if (fetched.length > 0) {
-          setListings(fetched);
-        }
-      }
+      const fetched: Listing[] = [];
+      snap.forEach((docSnap) => {
+        fetched.push(docSnap.data() as Listing);
+      });
+      setListings(fetched);
     } catch (e) {
       console.warn('Firestore refresh note:', e);
     } finally {
@@ -201,7 +246,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [favorites, setFavorites] = useState<string[]>(() => {
     const saved = localStorage.getItem('ivoire_favorites');
-    return saved ? JSON.parse(saved) : ['demo-1', 'demo-6'];
+    return saved ? JSON.parse(saved) : [];
   });
 
   const [compareListings, setCompareListings] = useState<string[]>(() => {
@@ -235,6 +280,69 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setCompareListings([]);
     showToast('Comparateur vidé.', 'info');
   };
+
+  // Recently Viewed Listings (up to 5 stored in localStorage)
+  const [recentlyViewedIds, setRecentlyViewedIds] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('ivoire_recently_viewed');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const addToRecentlyViewed = (listingId: string) => {
+    if (!listingId) return;
+    setRecentlyViewedIds((prev) => {
+      const filtered = prev.filter((id) => id !== listingId);
+      const updated = [listingId, ...filtered].slice(0, 5);
+      try {
+        localStorage.setItem('ivoire_recently_viewed', JSON.stringify(updated));
+      } catch (e) {
+        console.warn('LocalStorage error saving recently viewed:', e);
+      }
+      return updated;
+    });
+  };
+
+  const removeFromRecentlyViewed = (listingId: string) => {
+    setRecentlyViewedIds((prev) => {
+      const updated = prev.filter((id) => id !== listingId);
+      try {
+        localStorage.setItem('ivoire_recently_viewed', JSON.stringify(updated));
+      } catch (e) {
+        console.warn('LocalStorage error removing recently viewed:', e);
+      }
+      return updated;
+    });
+  };
+
+  const clearRecentlyViewed = () => {
+    setRecentlyViewedIds([]);
+    try {
+      localStorage.removeItem('ivoire_recently_viewed');
+    } catch (e) {
+      console.warn('LocalStorage error clearing recently viewed:', e);
+    }
+    showToast('Historique des annonces consultées effacé.', 'info');
+  };
+
+  const setSelectedListing: React.Dispatch<React.SetStateAction<Listing | null>> = (action) => {
+    _setSelectedListing((prev) => {
+      const next = typeof action === 'function' ? (action as (prev: Listing | null) => Listing | null)(prev) : action;
+      if (next?.id) {
+        addToRecentlyViewed(next.id);
+      }
+      return next;
+    });
+  };
+
+  // Derive the 5 Listing objects preserving recent view order
+  const recentlyViewedListings = React.useMemo(() => {
+    return recentlyViewedIds
+      .map((id) => listings.find((l) => l.id === id))
+      .filter((l): l is Listing => Boolean(l));
+  }, [recentlyViewedIds, listings]);
 
   const [bookings, setBookings] = useState<Booking[]>(() => {
     const saved = localStorage.getItem('ivoire_bookings');
@@ -343,6 +451,52 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }, 4000);
   };
 
+  // Gateway Portal Space ('chercheur' | 'proprietaire' | null)
+  const [userPortal, setUserPortalState] = useState<'chercheur' | 'proprietaire' | null>(() => {
+    try {
+      const saved = localStorage.getItem('ivoire_user_space');
+      if (saved === 'chercheur' || saved === 'proprietaire') {
+        return saved;
+      }
+    } catch (e) {
+      // Ignore
+    }
+    return null;
+  });
+
+  const setUserPortal = (space: 'chercheur' | 'proprietaire' | null) => {
+    setUserPortalState(space);
+    try {
+      if (space) {
+        localStorage.setItem('ivoire_user_space', space);
+      } else {
+        localStorage.removeItem('ivoire_user_space');
+      }
+    } catch (e) {
+      console.warn('LocalStorage error setting portal space:', e);
+    }
+  };
+
+  const selectPortal = (space: 'chercheur' | 'proprietaire') => {
+    setUserPortal(space);
+    if (space === 'proprietaire') {
+      if (currentUser?.role !== 'proprietaire' && currentUser?.role !== 'admin') {
+        switchRole('proprietaire');
+      }
+      showToast('Espace Propriétaire activé 🏡 Déposez vos offres !', 'success');
+    } else {
+      if (currentUser?.role === 'proprietaire') {
+        switchRole('client');
+      }
+      showToast('Espace Chercheur activé 🔍 Découvrez toutes les offres !', 'success');
+    }
+  };
+
+  const resetPortal = () => {
+    setUserPortal(null);
+    showToast('Porte d\'entrée réinitialisée. Choisissez votre espace.', 'info');
+  };
+
   // Sync state to local storage for instant responsiveness & offline support
   useEffect(() => {
     localStorage.setItem('ivoire_listings', JSON.stringify(listings));
@@ -397,7 +551,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const snap = await getDoc(userRef);
           if (snap.exists()) {
             const data = snap.data() as UserProfile;
-            setCurrentUser(data);
+            const normalizedData: UserProfile = {
+              ...data,
+              roles: data.roles || (data.role ? [data.role === 'client' ? 'chercheur' : data.role] : ['chercheur']),
+              espaceActif: data.espaceActif || (data.role === 'proprietaire' ? 'proprietaire' : 'chercheur'),
+              commune: data.commune || 'Cocody',
+              telephone: data.telephone || '+225 07 00 00 00 00',
+            };
+            setCurrentUser(normalizedData);
           } else {
             // Check if admin email
             const isAdminEmail = fbUser.email === 'toyogotoure8@gmail.com';
@@ -405,16 +566,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               id: fbUser.uid,
               nom: fbUser.displayName || 'Utilisateur',
               telephone: fbUser.phoneNumber || '+225 07 00 00 00 00',
+              commune: 'Cocody',
               email: fbUser.email || undefined,
-              role: isAdminEmail ? 'admin' : 'client',
-              verifie: isAdminEmail,
+              roles: isAdminEmail ? ['chercheur', 'proprietaire', 'admin'] : ['chercheur'],
+              espaceActif: 'chercheur',
               dateCreation: new Date().toISOString(),
             };
             await setDoc(userRef, newProfile);
             setCurrentUser(newProfile);
-            if (!isAdminEmail) {
-              setShowRoleModal(true);
-            }
           }
         } catch (e) {
           console.warn('Firestore user fetch note:', e);
@@ -423,9 +582,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               id: fbUser.uid,
               nom: fbUser.displayName || 'Utilisateur',
               telephone: fbUser.phoneNumber || '+225 07 00 00 00 00',
+              commune: 'Cocody',
               email: fbUser.email || undefined,
-              role: fbUser.email === 'toyogotoure8@gmail.com' ? 'admin' : 'client',
-              verifie: fbUser.email === 'toyogotoure8@gmail.com',
+              roles: fbUser.email === 'toyogotoure8@gmail.com' ? ['chercheur', 'proprietaire', 'admin'] : ['chercheur'],
+              espaceActif: 'chercheur',
               dateCreation: new Date().toISOString(),
             };
             setCurrentUser(fallbackProfile);
@@ -437,6 +597,197 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     return () => unsubscribe();
   }, []);
+
+  const registerSingleAccount = async (data: {
+    nom: string;
+    prenoms?: string;
+    telephone: string;
+    commune: string;
+    email?: string;
+    initialSpace: AppSpace;
+    donneesChercheur?: DonneesChercheur;
+    donneesProprietaire?: DonneesProprietaire;
+  }) => {
+    const uid = auth.currentUser?.uid || ('usr-' + data.telephone.replace(/[^0-9]/g, ''));
+    const roles: UserRole[] = [data.initialSpace];
+    if (data.email === 'toyogotoure8@gmail.com' || auth.currentUser?.email === 'toyogotoure8@gmail.com') {
+      roles.push('admin');
+    }
+
+    const emailToUse = data.email || auth.currentUser?.email || undefined;
+
+    const newProfile: UserProfile = {
+      id: uid,
+      nom: data.nom,
+      prenoms: data.prenoms,
+      telephone: data.telephone,
+      commune: data.commune,
+      email: emailToUse,
+      roles,
+      espaceActif: data.initialSpace,
+      profilComplet: true,
+      verifie: Boolean(data.donneesProprietaire?.verifie || false),
+      bloque: false,
+      donneesChercheur: data.donneesChercheur,
+      donneesProprietaire: data.donneesProprietaire,
+      dateCreation: new Date().toISOString(),
+    };
+
+    try {
+      await setDoc(doc(db, 'users', uid), newProfile);
+    } catch (e) {
+      console.warn('Firestore offline fallback saving user:', e);
+    }
+
+    setCurrentUser(newProfile);
+    setUserPortal(data.initialSpace);
+    showToast(`Compte unique créé avec succès ! Bienvenue dans votre espace ${data.initialSpace === 'chercheur' ? 'Chercheur' : 'Propriétaire'}.`, 'success');
+  };
+
+  const loginWithEmail = async (email: string, pass: string) => {
+    try {
+      setIsAuthLoading(true);
+      const res = await signInWithEmailAndPassword(auth, email.trim(), pass);
+      showToast(`Connexion réussie ! Bienvenue.`, 'success');
+      setShowAuthModal(false);
+    } catch (err: any) {
+      console.warn('Email login error:', err);
+      const msg = getAuthErrorMessage(err);
+      showToast(msg, 'error');
+      throw new Error(msg);
+    } finally {
+      setIsAuthLoading(false);
+    }
+  };
+
+  const registerWithEmail = async (email: string, pass: string, name?: string, phone?: string) => {
+    try {
+      setIsAuthLoading(true);
+      const res = await createUserWithEmailAndPassword(auth, email.trim(), pass);
+      const fbUser = res.user;
+
+      try {
+        await sendEmailVerification(fbUser);
+      } catch (e) {
+        console.warn('Send verification email error:', e);
+      }
+
+      showToast('Compte créé avec succès ! Un e-mail de vérification vous a été envoyé.', 'success');
+      setShowAuthModal(false);
+    } catch (err: any) {
+      console.warn('Email register error:', err);
+      const msg = getAuthErrorMessage(err);
+      showToast(msg, 'error');
+      throw new Error(msg);
+    } finally {
+      setIsAuthLoading(false);
+    }
+  };
+
+  const sendPasswordReset = async (email: string) => {
+    try {
+      await sendPasswordResetEmail(auth, email.trim());
+      showToast('E-mail de réinitialisation envoyé ! Vérifiez votre boîte de réception.', 'success');
+    } catch (err: any) {
+      const msg = getAuthErrorMessage(err);
+      showToast(msg, 'error');
+      throw new Error(msg);
+    }
+  };
+
+  const resendVerificationEmail = async () => {
+    if (!auth.currentUser) return;
+    try {
+      await sendEmailVerification(auth.currentUser);
+      showToast('E-mail de vérification renvoyé avec succès !', 'success');
+    } catch (err: any) {
+      const msg = getAuthErrorMessage(err);
+      showToast(msg, 'error');
+    }
+  };
+
+  const linkEmailCredential = async (email: string, pass: string) => {
+    if (!auth.currentUser) return;
+    try {
+      const credential = EmailAuthProvider.credential(email.trim(), pass);
+      await linkWithCredential(auth.currentUser, credential);
+      showToast('Adresse e-mail liée avec succès à votre compte !', 'success');
+
+      if (currentUser) {
+        const updated = { ...currentUser, email: email.trim() };
+        setCurrentUser(updated);
+        try {
+          await updateDoc(doc(db, 'users', currentUser.id), { email: email.trim() });
+        } catch (e) {
+          console.warn('Firestore update email link note:', e);
+        }
+      }
+    } catch (err: any) {
+      const msg = getAuthErrorMessage(err);
+      showToast(msg, 'error');
+      throw new Error(msg);
+    }
+  };
+
+  const addRoleToAccount = async (data: {
+    newSpaceRole: AppSpace;
+    donneesChercheur?: DonneesChercheur;
+    donneesProprietaire?: DonneesProprietaire;
+  }) => {
+    if (!currentUser) return;
+
+    const existingRoles = currentUser.roles || [currentUser.espaceActif || 'chercheur'];
+    const updatedRoles = Array.from(new Set([...existingRoles, data.newSpaceRole]));
+
+    const updatedProfile: UserProfile = {
+      ...currentUser,
+      roles: updatedRoles,
+      espaceActif: data.newSpaceRole,
+      donneesChercheur: data.donneesChercheur ? { ...currentUser.donneesChercheur, ...data.donneesChercheur } : currentUser.donneesChercheur,
+      donneesProprietaire: data.donneesProprietaire ? { ...currentUser.donneesProprietaire, ...data.donneesProprietaire } : currentUser.donneesProprietaire,
+    };
+
+    try {
+      await updateDoc(doc(db, 'users', currentUser.id), {
+        roles: updatedRoles,
+        espaceActif: data.newSpaceRole,
+        ...(data.donneesChercheur ? { donneesChercheur: updatedProfile.donneesChercheur } : {}),
+        ...(data.donneesProprietaire ? { donneesProprietaire: updatedProfile.donneesProprietaire } : {}),
+      });
+    } catch (e) {
+      console.warn('Firestore update role fallback:', e);
+    }
+
+    setCurrentUser(updatedProfile);
+    setUserPortal(data.newSpaceRole);
+    showToast(`Nouveau statut « ${data.newSpaceRole === 'chercheur' ? 'Chercheur' : 'Propriétaire'} » ajouté à votre compte unique !`, 'success');
+  };
+
+  const switchActiveSpace = async (space: AppSpace) => {
+    if (!currentUser) return;
+
+    if (!currentUser.roles || !currentUser.roles.includes(space)) {
+      showToast(`Le statut « ${space} » doit être activé sur votre compte.`, 'info');
+      return;
+    }
+
+    const updatedProfile: UserProfile = {
+      ...currentUser,
+      espaceActif: space,
+    };
+
+    try {
+      await updateDoc(doc(db, 'users', currentUser.id), {
+        espaceActif: space,
+      });
+    } catch (e) {
+      console.warn('Firestore update space fallback:', e);
+    }
+
+    setCurrentUser(updatedProfile);
+    setUserPortal(space);
+    showToast(`Espace actif : ${space === 'chercheur' ? 'Chercheur' : 'Propriétaire'}`, 'info');
+  };
 
   // Request user geolocation for "Autour de moi"
   const requestUserLocation = async () => {
@@ -547,8 +898,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         id: 'google-user-' + Date.now(),
         nom: 'Utilisateur Google',
         telephone: '+225 07 12 34 56 78',
+        commune: 'Cocody',
         email: 'utilisateur@gmail.com',
-        role: 'client',
+        roles: ['chercheur'],
+        espaceActif: 'chercheur',
         verifie: false,
         dateCreation: new Date().toISOString(),
       };
@@ -564,11 +917,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       setIsAuthLoading(true);
       const uid = 'phone-' + phone.replace(/[^0-9]/g, '');
+      const assignedSpace: AppSpace = chosenRole === 'proprietaire' ? 'proprietaire' : 'chercheur';
       const profile: UserProfile = {
         id: uid,
         nom: customName?.trim() || `Utilisateur CI (${phone.slice(-4)})`,
         telephone: phone.startsWith('+225') ? phone : `+225 ${phone}`,
-        role: chosenRole,
+        commune: 'Cocody',
+        roles: [assignedSpace],
+        espaceActif: assignedSpace,
         verifie: false,
         dateCreation: new Date().toISOString(),
       };
@@ -646,15 +1002,59 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     showToast('Pièce d\'identité envoyée. En attente de validation par l\'administration.', 'info');
   };
 
-  const addListing = async (listingData: Omit<Listing, 'id' | 'dateCreation' | 'vues' | 'contacts' | 'demandes'>): Promise<string> => {
+  const addListing = async (listingData: Omit<Listing, 'id' | 'dateCreation' | 'vues' | 'contacts' | 'demandes' | 'signalements' | 'ownerTelVerifie' | 'ownerEmailVerifie' | 'ownerVerifie' | 'statut'>): Promise<string> => {
+    if (!currentUser) throw new Error('Veuillez vous connecter pour publier.');
+    if (currentUser.bloque) throw new Error('Votre compte est bloqué. Publication impossible.');
+
+    // 1. Profil complet check
+    if (!currentUser.profilComplet) throw new Error('Veuillez compléter votre profil propriétaire avant de publier.');
+
+    // 2. New owner check (< 7 days, max 3 listings)
+    const accountAgeDays = (Date.now() - new Date(currentUser.dateCreation).getTime()) / (1000 * 60 * 60 * 24);
+    if (accountAgeDays < 7) {
+      const activeCount = listings.filter(l => l.ownerId === currentUser.id && l.statut !== 'rejetee').length;
+      if (activeCount >= 3) {
+        throw new Error('Limite de 3 annonces atteinte pour les comptes de moins de 7 jours (Nouveau propriétaire).');
+      }
+    }
+
+    // 3. Duplicate check
+    const isDuplicate = listings.some(l => 
+      l.ownerId === currentUser.id && 
+      l.titre.toLowerCase().trim() === listingData.titre.toLowerCase().trim() &&
+      l.commune === listingData.commune &&
+      l.statut !== 'rejetee'
+    );
+    if (isDuplicate) throw new Error('Vous avez déjà publié une annonce identique (même titre et commune).');
+
+    // 4. Verification check (Email or Phone)
+    const isEmailVerified = Boolean(auth.currentUser?.emailVerified || currentUser.emailVerified);
+    const isPhoneVerified = Boolean(currentUser.phoneVerified || (currentUser.telephone && currentUser.telephone.length > 8));
+    
+    if (!isEmailVerified && !isPhoneVerified) {
+      throw new Error('Votre e-mail ou votre téléphone doit être vérifié pour publier.');
+    }
+
     const newId = 'listing-' + Date.now();
+    const ownerNom = currentUser.donneesProprietaire?.nomCommercial || currentUser.nom || 'Propriétaire';
+    const ownerWhatsapp = currentUser.donneesProprietaire?.whatsappPro || currentUser.telephone || '';
+    
     const newListing: Listing = {
       ...listingData,
       id: newId,
+      ownerId: currentUser.id,
+      ownerNom,
+      ownerWhatsapp,
+      ownerTelephone: currentUser.telephone,
+      ownerTelVerifie: isPhoneVerified,
+      ownerEmailVerifie: isEmailVerified,
+      ownerVerifie: Boolean(currentUser.verifie),
+      signalements: 0,
+      misEnAvant: false,
       vues: 0,
       contacts: 0,
       demandes: 0,
-      statut: 'publiee', // Published immediately so new users and visitors see owner/promoter publications instantly
+      statut: 'publiee', // Auto-published if controls pass
       dateCreation: new Date().toISOString(),
     };
 
@@ -663,10 +1063,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       await setDoc(doc(db, 'listings', newId), newListing);
     } catch (e) {
-      console.warn('Firestore sync note:', e);
+      handleFirestoreError(e, OperationType.CREATE, 'listings');
     }
 
-    showToast('Annonce soumise avec succès ! Elle sera examinée par un modérateur.', 'success');
+    showToast('Annonce publiée avec succès ! Elle est maintenant visible par tous.', 'success');
     return newId;
   };
 
@@ -799,61 +1199,65 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     motif: string,
     description?: string
   ) => {
-    const reportId = 'report-' + Date.now();
+    const currentUid = currentUser?.id || 'guest';
+    const reportId = `${listingId}_${currentUid}`;
+    
+    // 1. One report per user per listing
+    const reportRef = doc(db, 'reports', reportId);
+    const snap = await getDoc(reportRef);
+    if (snap.exists()) {
+      showToast('Vous avez déjà signalé cette annonce.', 'info');
+      return;
+    }
+
     const newReport: Report = {
       id: reportId,
       listingId,
       listingTitre,
       ownerId,
-      userId: currentUser?.id || 'guest',
+      reporterId: currentUid,
+      userId: currentUid,
       motif,
       description,
       statut: 'en_attente',
       dateCreation: new Date().toISOString(),
     };
 
-    const updatedReports = [newReport, ...reports];
-    setReports(updatedReports);
+    // 2. Atomic increment and report creation
+    const batch = writeBatch(db);
+    batch.set(reportRef, newReport);
+    batch.update(doc(db, 'listings', listingId), { signalements: increment(1) });
 
     try {
-      await setDoc(doc(db, 'reports', reportId), newReport);
-    } catch (e) {
-      console.warn('Firestore report save note:', e);
-    }
+      await batch.commit();
+      setReports((prev) => [newReport, ...prev]);
 
-    // Check distinct reported listings for this owner
-    if (ownerId) {
-      const ownerReports = updatedReports.filter((r) => r.ownerId === ownerId);
-      const distinctReportedListings = new Set(ownerReports.map((r) => r.listingId));
-
-      if (distinctReportedListings.size >= 3) {
-        // Suspend owner pending admin verification
-        setAllUsers((prev) =>
-          prev.map((u) => (u.id === ownerId ? { ...u, bloque: true } : u))
-        );
-
-        // Hide owner's listings pending admin review
-        setListings((prev) =>
-          prev.map((l) => (l.ownerId === ownerId ? { ...l, statut: 'masquee' } : l))
-        );
-
-        try {
-          await updateDoc(doc(db, 'users', ownerId), {
-            bloque: true,
-          });
-        } catch (e) {
-          console.warn('Firestore update owner block note:', e);
+      // 3. Auto-suspension check
+      const listingSnap = await getDoc(doc(db, 'listings', listingId));
+      if (listingSnap.exists()) {
+        const data = listingSnap.data() as Listing;
+        if (data.signalements >= 3 && data.statut === 'publiee') {
+          await updateDoc(doc(db, 'listings', listingId), { statut: 'suspendue' });
+          setListings((prev) => prev.map(l => l.id === listingId ? { ...l, statut: 'suspendue', signalements: data.signalements } : l));
+          showToast('Annonce suspendue automatiquement après plusieurs signalements.', 'info');
+        } else {
+          setListings((prev) => prev.map(l => l.id === listingId ? { ...l, signalements: data.signalements } : l));
+          showToast('Signalement enregistré. Merci de veiller à la sécurité de la communauté.', 'info');
         }
-
-        showToast(
-          'Signalement enregistré. Ce propriétaire a accumulé 3 annonces signalées et a été suspendu automatiquement en attente de vérification par l\'admin.',
-          'info'
-        );
-        return;
       }
+    } catch (e) {
+      handleFirestoreError(e, OperationType.WRITE, 'reports');
     }
+  };
 
-    showToast('Signalement enregistré. Merci de veiller à la sécurité de la communauté.', 'info');
+  const contestSuspension = async (listingId: string, motif: string) => {
+    try {
+      await updateDoc(doc(db, 'listings', listingId), { contestation: motif });
+      setListings((prev) => prev.map(l => l.id === listingId ? { ...l, contestation: motif } : l));
+      showToast('Votre contestation a été transmise à l\'administration.', 'success');
+    } catch (e) {
+      handleFirestoreError(e, OperationType.UPDATE, 'listings');
+    }
   };
 
   const resolveReport = async (reportId: string) => {
@@ -925,6 +1329,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     showToast('Statut du compte mis à jour.', 'info');
   };
 
+  const deleteDemoListings = async () => {
+    try {
+      const snap = await getDocs(collection(db, 'listings'));
+      const batchDeletes: string[] = [];
+      snap.forEach((docSnap) => {
+        const data = docSnap.data() as Listing;
+        if (data.isExemple || data.demo || docSnap.id.startsWith('demo-')) {
+          batchDeletes.push(docSnap.id);
+        }
+      });
+
+      for (const id of batchDeletes) {
+        await deleteDoc(doc(db, 'listings', id));
+      }
+
+      setListings((prev) => prev.filter((l) => !l.isExemple && !l.demo && !l.id.startsWith('demo-')));
+      showToast(`${batchDeletes.length} annonce(s) de démonstration supprimée(s).`, 'success');
+    } catch (e) {
+      console.error(e);
+      showToast('Erreur lors de la suppression des annonces de démonstration', 'error');
+    }
+  };
+
   const sendMessage = async (receiverId: string, texte: string, listingId?: string, listingTitre?: string) => {
     const newMsg: Message = {
       id: 'msg-' + Date.now(),
@@ -944,12 +1371,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setFilters(defaultFilters);
   };
 
-  // Filter listings based on criteria
+  // Filter listings based on criteria (Rule: Home, feed, search, map, favorites read ONLY published listings)
   const filteredListings = listings.filter((item) => {
-    // Only published listings for regular clients, owners see their own, admins see all
+    const isOwner = currentUser && item.ownerId === currentUser.id;
+    const isAdmin = currentUser && (currentUser.role === 'admin' || currentUser.roles?.includes('admin'));
+
     if (item.statut !== 'publiee') {
-      const isOwner = currentUser && item.ownerId === currentUser.id;
-      const isAdmin = currentUser && currentUser.role === 'admin';
       if (!isOwner && !isAdmin) return false;
     }
 
@@ -1026,6 +1453,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         isAuthLoading,
         loginWithGoogle,
         loginWithPhone,
+        loginWithEmail,
+        registerWithEmail,
+        sendPasswordReset,
+        resendVerificationEmail,
+        linkEmailCredential,
         logout,
         switchRole,
         showAuthModal,
@@ -1084,6 +1516,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         validateListing,
         verifyOwnerIdentity,
         toggleUserBlock,
+        deleteDemoListings,
+        contestSuspension,
         allUsers,
 
         messages,
@@ -1097,6 +1531,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         clearCompare,
         isCompareModalOpen,
         setIsCompareModalOpen,
+
+        recentlyViewedIds,
+        recentlyViewedListings,
+        addToRecentlyViewed,
+        removeFromRecentlyViewed,
+        clearRecentlyViewed,
+
+        userPortal,
+        setUserPortal,
+        selectPortal,
+        resetPortal,
+
+        registerSingleAccount,
+        addRoleToAccount,
+        switchActiveSpace,
       }}
     >
       {children}

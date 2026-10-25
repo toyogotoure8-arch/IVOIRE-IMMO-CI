@@ -46,6 +46,15 @@ const FAQ_DATA: FaqItem[] = [
     highlights: ['1 mois de loyer pour l\'agence', 'Exiger une carte professionnelle ou reçu officiel'],
   },
   {
+    id: 'documents-requis-dossier',
+    category: 'location',
+    question: 'Quels sont les documents obligatoires requis pour constituer un dossier de location ou d\'achat ?',
+    answer:
+      'Pour une location d\'habitation en Côte d\'Ivoire :\n1. Pièce d\'identité valide (CNI Ivoirienne, Passeport ou Carte de Résident).\n2. 3 derniers bulletins de salaire ou attestation de travail (ou Registre de Commerce DFC pour les indépendants/commerçants).\n3. Relevé d\'identité bancaire ou justificatif de revenus réguliers.\n\nPour un achat immobilier :\n1. CNI / Passeport valide + Extrait d\'acte de naissance.\n2. Certificat de résidence.\n3. Extrait de contrat de mariage (selon le régime matrimonial).\n4. Justificatif de provenance des fonds transmis sous compte séquestre notariale.',
+    lawRef: 'Loi N° 2018-548 & Code du Notariat CI',
+    highlights: ['CNI/Passeport valide', '3 bulletins de paie ou Registre de commerce', 'Acte de naissance & Justificatif foncier'],
+  },
+  {
     id: 'duree-bail-resiliation',
     category: 'location',
     question: 'Quelle est la durée légale du bail d\'habitation et comment résilier le contrat ?',
@@ -114,6 +123,15 @@ const FAQ_DATA: FaqItem[] = [
       'Le bail commercial en Côte d\'Ivoire est régi par l\'Acte Uniforme OHADA portant droit commercial général. Le locataire commerçant qui occupe les lieux depuis plus de 2 ans bénéficie du droit au renouvellement de son bail. Un pas-de-porte ou droit au bail peut être négocié contractuellement.',
     lawRef: 'Acte Uniforme OHADA (Art. 101 à 134)',
     highlights: ['Protection du fonds de commerce', 'Droit au renouvellement après 2 ans', 'Encadrement strict des révisions de loyer'],
+  },
+  {
+    id: 'securisation-transactions-mobile-money',
+    category: 'securite',
+    question: 'Comment sécuriser les paiements d\'acomptes et de loyers (Mobile Money & Comptes Séquestres) ?',
+    answer:
+      'Pour sécuriser l\'ensemble de vos transactions immobilières en Côte d\'Ivoire :\n1. Ne faites AUCUN virement Mobile Money (Wave, Orange Money, MTN MoMo, Moov) avant d\'avoir visité le bien physiquement et contrôlé la pièce d\'identité du bailleur ou la carte d\'agrément de l\'agence.\n2. Exigez un reçu de paiement daté, signé et tamponné spécifiant la désignation exacte du bien et l\'objet du versment.\n3. Pour une réservation d\'hôtel ou de meublé, privilégiez le paiement sécurisé en ligne ou l\'acompte tracé par Mobile Money CinetPay.\n4. Pour un achat immobilier ou foncier, utilisez EXCLUSIVEMENT le compte séquestre ouvert auprès de l\'étude du Notaire instrumentaire.',
+    lawRef: 'Protocole de Sécurisation IvoireImmo & Notariat CI',
+    highlights: ['Visite physique préalable obligatoire', 'Reçu écrit obligatoire', 'Compte séquestre notarial pour achat'],
   },
   {
     id: 'arnaques-frais-visite-visite-payante',

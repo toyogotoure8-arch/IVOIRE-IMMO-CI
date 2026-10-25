@@ -1,25 +1,54 @@
 export type CategoryType = 'location' | 'vente' | 'meuble' | 'hotel';
 
-export type UserRole = 'client' | 'proprietaire' | 'admin';
+export type UserRole = 'chercheur' | 'proprietaire' | 'admin' | 'client';
+export type AppSpace = 'chercheur' | 'proprietaire';
+export type OwnerType = 'particulier' | 'agence' | 'hotelier' | 'promoteur';
 
-export type ListingStatus = 'en_attente' | 'publiee' | 'rejetee' | 'masquee';
+export type ListingStatus = 'en_attente' | 'publiee' | 'rejetee' | 'masquee' | 'suspendue';
 
 export type BookingStatus = 'demandee' | 'acceptee' | 'refusee';
 
 export type VerificationStatus = 'non_fournie' | 'en_attente' | 'validee' | 'rejetee';
 
-export interface UserProfile {
-  id: string;
-  nom: string;
-  telephone: string;
-  email?: string;
-  role: UserRole;
-  verifie: boolean;
+export interface DonneesChercheur {
+  budgetMaxPrefe?: number;
+  communePreferee?: string;
+  typeRecherche?: string;
+}
+
+export interface DonneesProprietaire {
+  typeProfil: OwnerType;
+  nomCommercial?: string;
+  whatsappPro?: string;
+  adressePro?: string;
   pieceIdentiteUrl?: string;
   pieceIdentiteStatut?: VerificationStatus;
   pieceIdentiteType?: string;
+  verifie?: boolean;
+}
+
+export interface UserProfile {
+  id: string;
+  nom: string;
+  prenoms?: string;
+  telephone: string;
+  commune: string;
+  email?: string;
+  roles: UserRole[];
+  espaceActif: AppSpace;
+  profilComplet?: boolean;
+  verifie?: boolean;
+  emailVerified?: boolean;
+  phoneVerified?: boolean;
   bloque?: boolean;
+  donneesChercheur?: DonneesChercheur;
+  donneesProprietaire?: DonneesProprietaire;
   dateCreation: string;
+  // Backward compatibility getters
+  role?: UserRole;
+  pieceIdentiteUrl?: string;
+  pieceIdentiteStatut?: VerificationStatus;
+  pieceIdentiteType?: string;
 }
 
 export interface ListingPosition {
@@ -32,7 +61,10 @@ export interface Listing {
   id: string;
   ownerId: string;
   ownerNom: string;
+  ownerWhatsapp?: string;
   ownerTelephone: string;
+  ownerTelVerifie: boolean;
+  ownerEmailVerifie: boolean;
   ownerVerifie: boolean;
   categorie: CategoryType;
   type: string;
@@ -52,6 +84,11 @@ export interface Listing {
   demandes: number;
   datesOccupees?: string[]; // ISO date strings (YYYY-MM-DD)
   isExemple?: boolean;
+  demo?: boolean;
+  misEnAvant?: boolean;
+  misEnAvantFin?: string;
+  signalements: number;
+  contestation?: string;
   dateCreation: string;
 }
 
@@ -97,7 +134,8 @@ export interface Report {
   listingId: string;
   listingTitre: string;
   ownerId: string;
-  userId: string;
+  reporterId: string;
+  userId?: string;
   motif: ReportReason | string;
   description?: string;
   statut: 'en_attente' | 'traite';

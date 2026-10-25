@@ -33,10 +33,13 @@ export const OwnerDashboard: React.FC<Props> = ({ onOpenPublish }) => {
     deleteListing,
     updateBookingStatus,
     updateUserVerification,
+    contestSuspension,
     showToast,
   } = useApp();
 
   const [activeSubTab, setActiveSubTab] = useState<'annonces' | 'reservations' | 'calendrier' | 'identite'>('annonces');
+  const [contestationTexts, setContestationTexts] = useState<Record<string, string>>({});
+  const [isSubmittingContest, setIsSubmittingContest] = useState<Record<string, boolean>>({});
 
   // Filter listings owned by this user
   const myListings = listings.filter((l) => currentUser && l.ownerId === currentUser.id);
@@ -105,6 +108,24 @@ export const OwnerDashboard: React.FC<Props> = ({ onOpenPublish }) => {
     showToast('Date retirée', 'info');
   };
 
+  const handleContest = async (listingId: string) => {
+    const text = contestationTexts[listingId];
+    if (!text || text.trim().length < 10) {
+      showToast('Veuillez expliquer votre contestation en au moins 10 caractères', 'error');
+      return;
+    }
+
+    setIsSubmittingContest(prev => ({ ...prev, [listingId]: true }));
+    try {
+      await contestSuspension(listingId, text.trim());
+      showToast('Votre contestation a été envoyée pour examen.', 'success');
+    } catch (err) {
+      showToast('Erreur lors de l\'envoi de la contestation', 'error');
+    } finally {
+      setIsSubmittingContest(prev => ({ ...prev, [listingId]: false }));
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header & KPI Cards */}
@@ -115,16 +136,28 @@ export const OwnerDashboard: React.FC<Props> = ({ onOpenPublish }) => {
               <h2 className="text-xl sm:text-2xl font-extrabold text-gray-900 dark:text-white">
                 Espace Propriétaire & Hôtelier
               </h2>
-              {currentUser?.verifie ? (
-                <span className="flex items-center gap-1 text-xs font-bold text-[#0F6B3F] dark:text-[#34D399] bg-[#0F6B3F]/10 px-2.5 py-0.5 rounded-full">
-                  <ShieldCheck className="w-3.5 h-3.5" />
-                  Vérifié
+            <div className="flex flex-wrap gap-2 mt-2">
+              {currentUser?.phoneVerified ? (
+                <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-2.5 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-800/50">
+                  <ShieldCheck className="w-3 h-3" />
+                  Téléphone vérifié
                 </span>
               ) : (
-                <span className="text-xs font-semibold bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300 px-2.5 py-0.5 rounded-full">
-                  Non vérifié
+                <span className="text-[10px] font-semibold bg-gray-100 text-gray-500 dark:bg-gray-800 px-2.5 py-0.5 rounded-full border border-gray-200 dark:border-gray-700">
+                  Téléphone non vérifié
                 </span>
               )}
+              {currentUser?.emailVerified ? (
+                <span className="flex items-center gap-1 text-[10px] font-bold text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40 px-2.5 py-0.5 rounded-full border border-blue-200 dark:border-blue-800/50">
+                  <ShieldCheck className="w-3 h-3" />
+                  Email vérifié
+                </span>
+              ) : (
+                <span className="text-[10px] font-semibold bg-gray-100 text-gray-500 dark:bg-gray-800 px-2.5 py-0.5 rounded-full border border-gray-200 dark:border-gray-700">
+                  Email non vérifié
+                </span>
+              )}
+            </div>
             </div>
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
               Gérez vos biens immobiliers, chambres d'hôtel et réservations en temps réel.
@@ -247,13 +280,17 @@ export const OwnerDashboard: React.FC<Props> = ({ onOpenPublish }) => {
                             ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
                             : item.statut === 'en_attente'
                             ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
+                            : item.statut === 'suspendue'
+                            ? 'bg-red-100 text-red-800 dark:bg-red-950/60 dark:text-red-300'
                             : 'bg-gray-100 text-gray-600 dark:bg-gray-800'
                         }`}
                       >
                         {item.statut === 'publiee'
                           ? 'En ligne'
                           : item.statut === 'en_attente'
-                          ? 'En attente modération'
+                          ? 'Vérification automatique'
+                          : item.statut === 'suspendue'
+                          ? 'Suspendue (trop de signalements)'
                           : item.statut === 'rejetee'
                           ? 'Rejetée'
                           : 'Masquée'}
@@ -263,6 +300,38 @@ export const OwnerDashboard: React.FC<Props> = ({ onOpenPublish }) => {
                     <h4 className="font-bold text-sm text-gray-900 dark:text-white truncate">
                       {item.titre}
                     </h4>
+
+                    {item.statut === 'suspendue' && (
+                      <div className="mt-2 space-y-2">
+                        <p className="text-[10px] text-red-600 dark:text-red-400 font-medium bg-red-50 dark:bg-red-950/30 p-2 rounded-lg border border-red-100 dark:border-red-900/50">
+                          Cette annonce a été suspendue automatiquement suite à plusieurs signalements d'utilisateurs.
+                        </p>
+                        {item.contestation ? (
+                          <div className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium bg-emerald-50 dark:bg-emerald-950/30 p-2 rounded-lg border border-emerald-100 dark:border-emerald-900/50 flex items-center gap-1.5">
+                            <CheckCircle2 className="w-3 h-3" />
+                            Contestation envoyée : "{item.contestation}"
+                          </div>
+                        ) : (
+                          <div className="flex gap-2">
+                            <input
+                              type="text"
+                              placeholder="Expliquez pourquoi c'est une erreur..."
+                              value={contestationTexts[item.id] || ''}
+                              onChange={(e) => setContestationTexts(prev => ({ ...prev, [item.id]: e.target.value }))}
+                              className="flex-1 text-[10px] bg-white dark:bg-[#1a2d22] border border-red-200 dark:border-red-900/50 rounded-lg px-2 py-1.5 outline-none focus:ring-1 focus:ring-red-500"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleContest(item.id)}
+                              disabled={isSubmittingContest[item.id]}
+                              className="px-3 py-1.5 bg-red-600 text-white text-[10px] font-bold rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50"
+                            >
+                              Contester
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
 
                     <p className="text-xs text-gray-500">
                       {item.commune} • {formatFCFA(item.prix)}

@@ -2,21 +2,23 @@
   "entities": {
     "User": {
       "title": "User",
-      "description": "Profil utilisateur IvoireImmo (client, propriétaire ou admin)",
+      "description": "Profil unique utilisateur IvoireImmo (multi-rôles: chercheur / propriétaire)",
       "type": "object",
       "properties": {
         "id": { "type": "string", "maxLength": 128 },
         "nom": { "type": "string", "maxLength": 100 },
+        "prenoms": { "type": "string", "maxLength": 100 },
         "telephone": { "type": "string", "maxLength": 30 },
+        "commune": { "type": "string", "maxLength": 60 },
         "email": { "type": "string", "maxLength": 120 },
-        "role": { "type": "string", "enum": ["client", "proprietaire", "admin"] },
-        "verifie": { "type": "boolean" },
-        "pieceIdentiteUrl": { "type": "string", "maxLength": 500 },
-        "pieceIdentiteStatut": { "type": "string", "enum": ["non_fournie", "en_attente", "validee", "rejetee"] },
+        "roles": { "type": "array" },
+        "espaceActif": { "type": "string", "enum": ["chercheur", "proprietaire"] },
+        "donneesChercheur": { "type": "object" },
+        "donneesProprietaire": { "type": "object" },
         "bloque": { "type": "boolean" },
         "dateCreation": { "type": "string", "format": "date-time" }
       },
-      "required": ["id", "nom", "role", "verifie"]
+      "required": ["id", "nom", "telephone", "commune", "roles", "espaceActif"]
     },
     "Listing": {
       "title": "Listing",

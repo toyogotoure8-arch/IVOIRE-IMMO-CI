@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
+import { auth } from '../services/firebase';
 import { CategoryType } from '../types';
 import { COMMUNES_ABIDJAN, AUTRES_VILLES, EQUIPEMENTS_LIST, CATEGORIES_CONFIG, COORDONNEES_LOCALITES } from '../constants/ciData';
 import { compressImageFile } from '../utils/imageCompressor';
@@ -21,7 +22,7 @@ interface Props {
 }
 
 export const PublishModal: React.FC<Props> = ({ onClose }) => {
-  const { addListing, currentUser, setShowAuthModal, showToast } = useApp();
+  const { addListing, currentUser, setShowAuthModal, showToast, resendVerificationEmail } = useApp();
 
   const [categorie, setCategorie] = useState<CategoryType>('location');
   const [type, setType] = useState('Studio');
@@ -116,9 +117,20 @@ export const PublishModal: React.FC<Props> = ({ onClose }) => {
       return;
     }
 
+    // Verification check: email verified OR valid phone contact
+    const isEmailVerified = Boolean(auth.currentUser?.emailVerified);
+    const cleanPhoneDigits = telephone.replace(/[^0-9]/g, '');
+    const hasValidPhone = cleanPhoneDigits.length >= 8;
+
+    if (auth.currentUser && auth.currentUser.email && !isEmailVerified && !hasValidPhone) {
+      showToast('La publication d\'annonces exige une adresse e-mail vérifiée ou un numéro de téléphone valide.', 'error');
+      return;
+    }
+
     let ownerId = currentUser?.id;
-    let ownerNom = currentUser?.nom || ownerName.trim() || 'Bailleur IvoireImmo';
-    let isVerif = currentUser?.verifie || false;
+    let ownerNom = currentUser?.donneesProprietaire?.nomCommercial || currentUser?.nom || ownerName.trim() || 'Bailleur IvoireImmo';
+    let ownerWhatsapp = currentUser?.donneesProprietaire?.whatsappPro || telephone || currentUser?.telephone || '';
+    let isVerif = currentUser?.donneesProprietaire?.verifie || currentUser?.verifie || false;
 
     if (!currentUser) {
       const cleanDigits = telephone.replace(/[^0-9]/g, '');
@@ -127,8 +139,12 @@ export const PublishModal: React.FC<Props> = ({ onClose }) => {
         id: ownerId,
         nom: ownerNom,
         telephone: telephone.startsWith('+225') ? telephone : `+225 ${telephone}`,
-        role: 'proprietaire' as const,
+        commune,
+        roles: ['proprietaire' as const],
+        espaceActif: 'proprietaire' as const,
+        profilComplet: true,
         verifie: false,
+        bloque: false,
         dateCreation: new Date().toISOString(),
       };
       localStorage.setItem('ivoire_user', JSON.stringify(guestProfile));
@@ -140,8 +156,12 @@ export const PublishModal: React.FC<Props> = ({ onClose }) => {
       await addListing({
         ownerId: ownerId || 'owner-' + Date.now(),
         ownerNom,
+        ownerWhatsapp,
         ownerTelephone: telephone,
         ownerVerifie: isVerif,
+        ownerTelVerifie: currentUser?.phoneVerified || false,
+        ownerEmailVerifie: currentUser?.emailVerified || false,
+        signalements: 0,
         categorie,
         type,
         titre: titre.trim(),
@@ -157,16 +177,17 @@ export const PublishModal: React.FC<Props> = ({ onClose }) => {
           lng: positionCoords.lng,
           label: `${commune} - ${quartier}`,
         },
-        statut: 'en_attente',
-      });
-      onClose();
-    } catch (err) {
-      console.error(err);
-      showToast('Erreur lors de la publication', 'error');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
+          statut: 'publiee',
+        });
+        showToast('Félicitations ! Votre annonce est désormais en ligne.', 'success');
+        onClose();
+      } catch (err: any) {
+        console.error(err);
+        showToast(err.message || 'Erreur lors de la publication', 'error');
+      } finally {
+        setIsSubmitting(false);
+      }
+    };
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex justify-center items-end sm:items-center p-0 sm:p-4 overflow-y-auto">
@@ -198,7 +219,7 @@ export const PublishModal: React.FC<Props> = ({ onClose }) => {
           <div className="bg-emerald-50 dark:bg-emerald-950/30 p-3.5 rounded-2xl border border-emerald-200 dark:border-emerald-800/40 flex items-start gap-2.5 text-xs text-emerald-800 dark:text-emerald-300">
             <Info className="w-4 h-4 shrink-0 mt-0.5 text-[#0F6B3F]" />
             <p>
-              Toute nouvelle annonce est vérifiée par notre équipe avant publication sur la plateforme pour garantir la fiabilité des offres.
+              Votre annonce sera publiée <span className="font-bold">immédiatement</span> si votre compte est vérifié (Email ou Téléphone) et si le contenu respecte nos règles de sécurité.
             </p>
           </div>
 

@@ -14,6 +14,9 @@ import { AuthModal } from './components/AuthModal';
 import { RoleSelectModal } from './components/RoleSelectModal';
 import { FavoritesView } from './components/FavoritesView';
 import { UserSpaceView } from './components/UserSpaceView';
+import { OwnerDashboard } from './components/OwnerDashboard';
+import { BookingsView } from './components/BookingsView';
+import { MessagesView } from './components/MessagesView';
 import { AlertsModal } from './components/AlertsModal';
 import { PublicListingView } from './components/PublicListingView';
 import { OfferSelectionModal, SelectedPaymentContext } from './components/OfferSelectionModal';
@@ -24,8 +27,13 @@ import { TestimonialsSection } from './components/TestimonialsSection';
 import { NewsletterSection } from './components/NewsletterSection';
 import { FloatingCompareBar } from './components/FloatingCompareBar';
 import { ComparisonModal } from './components/ComparisonModal';
+import { PortalGatewaySection } from './components/PortalGatewaySection';
+import { FaqImmobilierSection } from './components/FaqImmobilierSection';
+import { SingleAccountOnboardingModal } from './components/SingleAccountOnboardingModal';
+import { SpaceSwitchModal } from './components/SpaceSwitchModal';
+import { ChercheurHomeView } from './components/ChercheurHomeView';
 
-import { Listing } from './types';
+import { Listing, AppSpace } from './types';
 import {
   Sparkles,
   TrendingUp,
@@ -54,11 +62,20 @@ const MainApp: React.FC = () => {
     showToast,
     isCompareModalOpen,
     setIsCompareModalOpen,
+    currentUser,
+    switchActiveSpace,
   } = useApp();
-
 
   const [isPublishOpen, setIsPublishOpen] = useState(false);
   const [isAlertsOpen, setIsAlertsOpen] = useState(false);
+  const [onboardingTargetSpace, setOnboardingTargetSpace] = useState<AppSpace | null>(null);
+  const [isSpaceSwitchOpen, setIsSpaceSwitchOpen] = useState(false);
+
+  const feedRef = React.useRef<HTMLDivElement>(null);
+
+  const handleScrollToFeed = () => {
+    feedRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
   const [quotaExceeded, setQuotaExceeded] = useState(false);
   const [isDark, setIsDark] = useState<boolean>(() => {
     return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -69,7 +86,6 @@ const MainApp: React.FC = () => {
     window.addEventListener('gmp-quota-exceeded', handleQuota);
     return () => window.removeEventListener('gmp-quota-exceeded', handleQuota);
   }, []);
-
 
   // Public standalone page state (via URL ?annonce=ID or ?listing=ID)
   const [publicListing, setPublicListing] = useState<Listing | null>(null);
@@ -126,6 +142,17 @@ const MainApp: React.FC = () => {
     showToast(`Paiement de ${result.amountFCFA} FCFA confirmé via CinetPay !`, 'success');
   };
 
+  const handleDoorSelect = (space: AppSpace) => {
+    if (currentUser && currentUser.roles && currentUser.roles.includes(space)) {
+      switchActiveSpace(space);
+    } else {
+      setOnboardingTargetSpace(space);
+    }
+  };
+
+  // Profile completeness check (must have at least 1 role created)
+  const hasCompletedProfile = Boolean(currentUser && currentUser.roles && currentUser.roles.length > 0);
+
   // If public listing link is active, show the standalone unauthenticated page
   if (publicListing) {
     return (
@@ -162,7 +189,6 @@ const MainApp: React.FC = () => {
       )}
 
       {/* Toast popup */}
-
       {toast && (
         <div className="fixed top-5 left-1/2 -translate-x-1/2 z-70 animate-in fade-in slide-in-from-top-4 duration-200 max-w-sm w-full px-4">
           <div
@@ -191,6 +217,7 @@ const MainApp: React.FC = () => {
         onOpenAlerts={() => setIsAlertsOpen(true)}
         isDark={isDark}
         toggleDarkMode={toggleDarkMode}
+        onOpenSpaceSwitcher={() => setIsSpaceSwitchOpen(true)}
       />
 
       {/* Main Container */}
@@ -219,123 +246,72 @@ const MainApp: React.FC = () => {
           </button>
         </div>
 
-        {/* 1. Tab Accueil */}
-        {activeTab === 'accueil' && (
-          <div className="space-y-6">
-            <SearchBanner />
+        {/* Main Content View Logic */}
+        {!hasCompletedProfile ? (
+          /* UNAUTHENTICATED VISITOR OR INCOMPLETE PROFILE -> Show Gateway Doors */
+          <div className="space-y-6 sm:space-y-8">
+            <PortalGatewaySection
+              onSelectDoor={handleDoorSelect}
+              onOpenSpaceSwitcher={() => setIsSpaceSwitchOpen(true)}
+              onOpenPublish={() => setIsPublishOpen(true)}
+            />
 
-            {/* Skeleton Loading State or Real Listings */}
-            {isLoadingListings ? (
-              <section className="space-y-4">
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 rounded-full border-2 border-[#0F6B3F] border-t-transparent animate-spin" />
-                  <h2 className="font-extrabold text-base sm:text-lg text-gray-900 dark:text-white">
-                    Chargement des annonces en Côte d'Ivoire...
-                  </h2>
-                </div>
-                <SkeletonListingGrid count={8} />
-              </section>
-            ) : isMapView ? (
-              <MapView listings={filteredListings} />
-            ) : (
-
+            {/* Public FAQ Section for visitors */}
+            <section className="pt-4">
+              <FaqImmobilierSection />
+            </section>
+          </div>
+        ) : (
+          /* LOGGED IN USER WITH COMPLETED PROFILE -> Direct Space Views */
+          <>
+            {/* 1. ESPACE PROPRIÉTAIRE */}
+            {currentUser?.espaceActif === 'proprietaire' && (
               <>
-                {/* Empty state if search has no results */}
-                {filteredListings.length === 0 ? (
-                  <div className="bg-white dark:bg-[#16261c] rounded-3xl p-10 text-center border border-dashed border-gray-300 dark:border-gray-800 space-y-3 my-6">
-                    <Building className="w-12 h-12 text-gray-400 mx-auto" />
-                    <h3 className="font-extrabold text-base text-gray-900 dark:text-white">
-                      Aucune annonce ne correspond à vos filtres
-                    </h3>
-                    <p className="text-xs text-gray-500 max-w-sm mx-auto">
-                      Essayez d'élargir la commune, d'augmenter le budget maximum ou de réduire les équipements exigés.
-                    </p>
-                    <button
-                      type="button"
-                      onClick={resetFilters}
-                      className="inline-flex items-center gap-1.5 px-4 py-2.5 bg-[#0F6B3F] hover:bg-[#0B5431] text-white text-xs font-bold rounded-xl shadow"
-                    >
-                      <RotateCcw className="w-3.5 h-3.5" />
-                      <span>Réinitialiser les filtres</span>
-                    </button>
+                {(activeTab === 'accueil' || activeTab === 'mes_annonces') && (
+                  <OwnerDashboard onOpenPublish={() => setIsPublishOpen(true)} />
+                )}
+
+                {activeTab === 'demandes_recues' && (
+                  <div className="space-y-6">
+                    <BookingsView />
+                    <MessagesView />
                   </div>
-                ) : (
-                  <>
-                    {/* Annonces à la Une (Featured) */}
-                    {featuredListings.length > 0 && (
-                      <section className="space-y-3">
-                        <div className="flex items-center gap-2">
-                          <TrendingUp className="w-4 h-4 text-[#F28C1B]" />
-                          <h2 className="font-extrabold text-base sm:text-lg text-gray-900 dark:text-white">
-                            Annonces à la une
-                          </h2>
-                          <span className="text-[11px] font-semibold text-emerald-800 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-950/60 px-2 py-0.5 rounded-full">
-                            Sélection vérifiée
-                          </span>
-                        </div>
-
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                          {featuredListings.map((item) => (
-                            <ListingCard key={`featured-${item.id}`} listing={item} />
-                          ))}
-                        </div>
-                      </section>
-                    )}
-
-                    {/* Toutes les Annonces Récentes */}
-                    <section className="space-y-3 pt-2">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <Sparkles className="w-4 h-4 text-[#0F6B3F] dark:text-[#34D399]" />
-                          <h2 className="font-extrabold text-base sm:text-lg text-gray-900 dark:text-white">
-                            Annonces récentes en Côte d'Ivoire
-                          </h2>
-                        </div>
-                        <span className="text-xs text-gray-500">
-                          {filteredListings.length} disponible{filteredListings.length > 1 ? 's' : ''}
-                        </span>
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                        {recentListings.map((item) => (
-                          <ListingCard key={item.id} listing={item} />
-                        ))}
-                      </div>
-                    </section>
-
-                    {/* Testimonials & Verified Reviews Section */}
-                    <TestimonialsSection />
-
-                    {/* Newsletter & Email Alerts Section */}
-                    <NewsletterSection />
-                  </>
                 )}
               </>
             )}
-          </div>
-        )}
 
-        {/* 2. Tab Favoris */}
-        {activeTab === 'favoris' && <FavoritesView />}
+            {/* 2. ESPACE CHERCHEUR */}
+            {currentUser?.espaceActif === 'chercheur' && (
+              <>
+                {activeTab === 'accueil' && <ChercheurHomeView />}
 
-        {/* 3. Tab Publier (Trigger direct ou modal) */}
-        {activeTab === 'publier' && (
-          <div className="py-2">
-            <PublishModal onClose={() => setActiveTab('accueil')} />
-          </div>
-        )}
+                {activeTab === 'favoris' && <FavoritesView />}
 
-        {/* 4. Tab Mon Espace */}
-        {activeTab === 'mon_espace' && (
-          <UserSpaceView
-            onOpenPublish={() => setIsPublishOpen(true)}
-            onOpenAlerts={() => setIsAlertsOpen(true)}
-          />
+                {activeTab === 'demandes' && (
+                  <div className="space-y-6">
+                    <BookingsView />
+                    <MessagesView />
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* Common Mon Espace Tab */}
+            {activeTab === 'mon_espace' && (
+              <UserSpaceView
+                onOpenPublish={() => setIsPublishOpen(true)}
+                onOpenAlerts={() => setIsAlertsOpen(true)}
+                onOpenSpaceSwitcher={() => setIsSpaceSwitchOpen(true)}
+              />
+            )}
+          </>
         )}
       </main>
 
-      {/* Floating Bottom Navigation */}
-      <BottomNav onOpenPublish={() => setIsPublishOpen(true)} />
+      {/* Floating Bottom Navigation (Only visible for logged in users with complete profile) */}
+      {hasCompletedProfile && (
+        <BottomNav onOpenPublish={() => setIsPublishOpen(true)} />
+      )}
 
       {/* Modals & Dialogs */}
       {selectedListing && (
@@ -354,6 +330,21 @@ const MainApp: React.FC = () => {
 
       {isAlertsOpen && (
         <AlertsModal onClose={() => setIsAlertsOpen(false)} />
+      )}
+
+      {/* Single Account Onboarding & Space Switch Modals */}
+      {onboardingTargetSpace && (
+        <SingleAccountOnboardingModal
+          targetSpace={onboardingTargetSpace}
+          onClose={() => setOnboardingTargetSpace(null)}
+        />
+      )}
+
+      {isSpaceSwitchOpen && (
+        <SpaceSwitchModal
+          onClose={() => setIsSpaceSwitchOpen(false)}
+          onOpenOnboardingForRole={(space) => setOnboardingTargetSpace(space)}
+        />
       )}
 
       {/* CinetPay Payment Modals */}
@@ -398,6 +389,7 @@ const MainApp: React.FC = () => {
     </div>
   );
 };
+
 
 export default function App() {
   const mapsApiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || 'AIzaSyByBkvaOc5j5x8cAyYPbv-raS3PGgn3Iqk';

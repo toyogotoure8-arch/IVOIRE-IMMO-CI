@@ -1,7 +1,7 @@
 import React from 'react';
 import { useApp } from '../context/AppContext';
 import { formatFCFA, formatIvorianPhone } from '../utils/calculations';
-import { CalendarCheck, MapPin, Clock, CheckCircle2, XCircle, Search } from 'lucide-react';
+import { CalendarCheck, MapPin, Clock, CheckCircle2, XCircle, Search, MessageCircle } from 'lucide-react';
 
 export const BookingsView: React.FC = () => {
   const { bookings, currentUser, setActiveTab, setSelectedListing, listings } = useApp();
@@ -106,6 +106,27 @@ export const BookingsView: React.FC = () => {
                     <span className="font-bold">{b.dateDepart}</span>
                   </div>
                 </div>
+
+                {/* Automation: 24h No Response Fallback */}
+                {b.statut === 'demandee' && (new Date().getTime() - new Date(b.dateCreation).getTime() > 24 * 60 * 60 * 1000) && (
+                  <div className="bg-amber-50 dark:bg-amber-950/30 p-3 rounded-xl border border-amber-200 dark:border-amber-900/50 space-y-2">
+                    <p className="text-[10px] text-amber-800 dark:text-amber-300 font-medium">
+                      Le propriétaire n'a pas encore répondu. Vous pouvez le contacter directement sur WhatsApp pour accélérer votre demande.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const waUrl = `https://wa.me/${b.clientTelephone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(`Bonjour, j'ai fait une demande de réservation pour votre annonce "${b.listingTitre}" sur IvoireImmo.`)}`;
+                        window.open(waUrl, '_blank');
+                      }}
+                      className="w-full py-2 bg-[#0F6B3F] text-white text-[10px] font-bold rounded-lg flex items-center justify-center gap-1.5"
+                    >
+                      <MessageCircle className="w-3.5 h-3.5 fill-white" />
+                      Contacter sur WhatsApp
+                    </button>
+                  </div>
+                )}
 
                 {originalListing && (
                   <div className="flex justify-end pt-1">

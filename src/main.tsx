@@ -8,8 +8,16 @@ import './index.css';
 };
 const origError = console.error;
 console.error = (...args: unknown[]) => {
-  origError.apply(console, args);
   const msg = args.map((a) => String(a)).join(' ');
+  // Ignore harmless Firestore offline fallback notification when Secure Token API is unprovisioned
+  if (
+    msg.includes('token-service-api-has-not-been-used') ||
+    msg.includes('securetoken.googleapis.com') ||
+    (msg.includes('@firebase/firestore') && msg.includes('Could not reach Cloud Firestore backend'))
+  ) {
+    return;
+  }
+  origError.apply(console, args);
   if (msg.includes('OverQuotaMapError') || msg.includes('QuotaExceededError')) {
     window.dispatchEvent(new CustomEvent('gmp-quota-exceeded'));
   }

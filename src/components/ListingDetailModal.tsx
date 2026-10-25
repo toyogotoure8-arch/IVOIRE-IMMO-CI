@@ -321,16 +321,25 @@ export const ListingDetailModal: React.FC<Props> = ({ listing, onClose, onOpenOf
               </div>
             </div>
 
-            {listing.ownerVerifie ? (
-              <span className="inline-flex items-center gap-1 text-xs font-bold text-[#0F6B3F] dark:text-[#34D399] bg-[#0F6B3F]/10 px-2.5 py-1 rounded-full">
-                <CheckCircle2 className="w-3.5 h-3.5" />
-                Vérifié
-              </span>
-            ) : (
-              <span className="text-xs text-gray-400">
-                Non vérifié
-              </span>
-            )}
+            <div className="flex flex-col items-end gap-1.5">
+              {listing.ownerTelVerifie && (
+                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-800/50">
+                  <ShieldCheck className="w-3 h-3" />
+                  Téléphone vérifié
+                </span>
+              )}
+              {listing.ownerEmailVerifie && (
+                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40 px-2 py-0.5 rounded-full border border-blue-200 dark:border-blue-800/50">
+                  <ShieldCheck className="w-3 h-3" />
+                  E-mail vérifié
+                </span>
+              )}
+              {!listing.ownerTelVerifie && !listing.ownerEmailVerifie && (
+                <span className="text-[10px] font-semibold text-gray-400 italic">
+                  Non vérifié
+                </span>
+              )}
+            </div>
           </div>
 
           {/* Description */}
