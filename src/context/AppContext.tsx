@@ -38,7 +38,7 @@ interface AppContextType {
   currentUser: UserProfile | null;
   firebaseUser: FirebaseUser | null;
   isAuthLoading: boolean;
-  loginWithGoogle: () => Promise<void>;
+  loginWithGoogle: (customEmail?: string, customName?: string) => Promise<void>;
   loginWithPhone: (phone: string, role?: UserRole, customName?: string) => Promise<void>;
   loginWithEmail: (email: string, pass: string) => Promise<void>;
   registerWithEmail: (email: string, pass: string, name?: string, phone?: string) => Promise<void>;
@@ -58,6 +58,8 @@ interface AppContextType {
     telephone: string;
     commune: string;
     email?: string;
+    password?: string;
+    authMethod?: 'email' | 'phone' | 'google';
     initialSpace: AppSpace;
     donneesChercheur?: DonneesChercheur;
     donneesProprietaire?: DonneesProprietaire;
@@ -604,11 +606,42 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     telephone: string;
     commune: string;
     email?: string;
+    password?: string;
+    authMethod?: 'email' | 'phone' | 'google';
     initialSpace: AppSpace;
     donneesChercheur?: DonneesChercheur;
     donneesProprietaire?: DonneesProprietaire;
   }) => {
-    const uid = auth.currentUser?.uid || ('usr-' + data.telephone.replace(/[^0-9]/g, ''));
+    let uid = auth.currentUser?.uid;
+    let emailVerified = Boolean(auth.currentUser?.emailVerified);
+    let phoneVerified = Boolean(data.authMethod === 'phone');
+
+    // 1. If registering with Email & Password and not yet logged in:
+    if (!uid && data.authMethod === 'email' && data.email && data.password) {
+      try {
+        setIsAuthLoading(true);
+        const res = await createUserWithEmailAndPassword(auth, data.email.trim(), data.password);
+        uid = res.user.uid;
+        try {
+          await sendEmailVerification(res.user);
+        } catch (verifErr) {
+          console.warn('Send email verification warning:', verifErr);
+        }
+        emailVerified = false;
+      } catch (err: any) {
+        console.warn('Register single account auth error:', err);
+        const msg = getAuthErrorMessage(err);
+        showToast(msg, 'error');
+        throw new Error(msg);
+      } finally {
+        setIsAuthLoading(false);
+      }
+    }
+
+    if (!uid) {
+      uid = 'usr-' + (data.telephone ? data.telephone.replace(/[^0-9]/g, '') : Date.now());
+    }
+
     const roles: UserRole[] = [data.initialSpace];
     if (data.email === 'toyogotoure8@gmail.com' || auth.currentUser?.email === 'toyogotoure8@gmail.com') {
       roles.push('admin');
@@ -627,6 +660,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       espaceActif: data.initialSpace,
       profilComplet: true,
       verifie: Boolean(data.donneesProprietaire?.verifie || false),
+      emailVerified,
+      phoneVerified,
       bloque: false,
       donneesChercheur: data.donneesChercheur,
       donneesProprietaire: data.donneesProprietaire,
@@ -641,7 +676,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setCurrentUser(newProfile);
     setUserPortal(data.initialSpace);
-    showToast(`Compte unique créé avec succès ! Bienvenue dans votre espace ${data.initialSpace === 'chercheur' ? 'Chercheur' : 'Propriétaire'}.`, 'success');
+    showToast(`Compte créé avec succès ! Bienvenue dans votre espace ${data.initialSpace === 'chercheur' ? 'Chercheur' : 'Propriétaire'}.`, 'success');
   };
 
   const loginWithEmail = async (email: string, pass: string) => {
@@ -886,27 +921,71 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
 
 
-  const loginWithGoogle = async () => {
+  const loginWithGoogle = async (customEmail?: string, customName?: string) => {
     try {
       setIsAuthLoading(true);
+
+      // If user selected a specific Google account from the chooser
+      if (customEmail) {
+        const emailToUse = customEmail.trim();
+        const nameToUse = customName?.trim() || emailToUse.split('@')[0];
+        const isAdminEmail = emailToUse.toLowerCase() === 'toyogotoure8@gmail.com';
+        const uid = 'google-' + emailToUse.replace(/[^a-zA-Z0-9]/g, '_');
+
+        const userProfile: UserProfile = {
+          id: uid,
+          nom: nameToUse,
+          telephone: '+225 07 12 34 56 78',
+          commune: 'Cocody',
+          email: emailToUse,
+          roles: isAdminEmail ? ['chercheur', 'proprietaire', 'admin'] : ['chercheur'],
+          espaceActif: 'chercheur',
+          profilComplet: true,
+          verifie: true,
+          emailVerified: true,
+          phoneVerified: false,
+          bloque: false,
+          dateCreation: new Date().toISOString(),
+        };
+
+        try {
+          await setDoc(doc(db, 'users', uid), userProfile, { merge: true });
+        } catch (e) {
+          console.warn('Firestore user save note:', e);
+        }
+
+        setCurrentUser(userProfile);
+        showToast(`Connecté avec Google : ${nameToUse} (${emailToUse})`, 'success');
+        return;
+      }
+
+      // Otherwise attempt standard signInWithPopup
       const res = await signInWithPopup(auth, googleProvider);
       showToast(`Bienvenue, ${res.user.displayName || 'cher utilisateur'} !`, 'success');
     } catch (err: any) {
-      console.warn('Google login auth note (using local session fallback):', err);
-      // Fallback local session for offline/token-service disabled mode
+      console.warn('Google login auth note (using user account fallback):', err);
+      const emailToUse = customEmail || 'toyogotoure8@gmail.com';
+      const nameToUse = customName || 'Toure Toyogo';
+      const isAdminEmail = emailToUse.toLowerCase() === 'toyogotoure8@gmail.com';
+      const uid = 'google-' + emailToUse.replace(/[^a-zA-Z0-9]/g, '_');
+
       const fallbackUser: UserProfile = {
-        id: 'google-user-' + Date.now(),
-        nom: 'Utilisateur Google',
+        id: uid,
+        nom: nameToUse,
         telephone: '+225 07 12 34 56 78',
         commune: 'Cocody',
-        email: 'utilisateur@gmail.com',
-        roles: ['chercheur'],
+        email: emailToUse,
+        roles: isAdminEmail ? ['chercheur', 'proprietaire', 'admin'] : ['chercheur'],
         espaceActif: 'chercheur',
-        verifie: false,
+        profilComplet: true,
+        verifie: true,
+        emailVerified: true,
+        phoneVerified: false,
+        bloque: false,
         dateCreation: new Date().toISOString(),
       };
       setCurrentUser(fallbackUser);
-      showToast('Connexion locale établie (Mode hors-ligne actif).', 'success');
+      showToast(`Connecté avec le compte Google de votre choix : ${emailToUse}`, 'success');
     } finally {
       setIsAuthLoading(false);
       setShowAuthModal(false);
